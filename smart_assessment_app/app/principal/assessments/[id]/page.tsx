@@ -11,6 +11,7 @@ export default function PrincipalAssessmentResults({ params }: { params: Promise
   const [loading, setLoading] = useState(true);
   const [aiReview, setAiReview] = useState<string | null>(null);
   const [generatingReview, setGeneratingReview] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -30,6 +31,7 @@ export default function PrincipalAssessmentResults({ params }: { params: Promise
 
   const generateReview = async () => {
     setGeneratingReview(true);
+    setReviewError(null);
     try {
       const res = await fetch(`/api/principal/assessments/${id}/review`, {
         method: "POST",
@@ -41,9 +43,13 @@ export default function PrincipalAssessmentResults({ params }: { params: Promise
         }),
       });
       const d = await res.json();
+      if (!res.ok) {
+        throw new Error(d?.error?.message ?? "Unable to generate AI review.");
+      }
       if (d.review) setAiReview(d.review);
-    } catch {
-      // Silently fail or show brief error text; AI is not strictly required.
+      else throw new Error("AI review generation returned no review.");
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : "Unable to generate AI review.");
     } finally {
       setGeneratingReview(false);
     }
@@ -153,6 +159,7 @@ export default function PrincipalAssessmentResults({ params }: { params: Promise
                 <p className="mb-4 text-sm text-slate-500">
                   Generate an AI summary of this assessment using aggregated data only.
                 </p>
+                {reviewError ? <p className="mb-4 text-sm text-red-600">{reviewError}</p> : null}
                 <button
                   onClick={generateReview}
                   disabled={generatingReview}

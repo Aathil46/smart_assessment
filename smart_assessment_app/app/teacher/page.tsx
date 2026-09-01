@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 
 import { requireTeacherSession } from "@/lib/auth/teacher";
 
@@ -16,6 +17,20 @@ export default async function TeacherDashboardPage() {
         <p className="mt-3 max-w-2xl text-slate-600">
           Manage classes, materials, and the assessment pipeline from this dashboard.
         </p>
+        <nav className="mt-6 flex flex-wrap gap-3" aria-label="Teacher navigation">
+          <Link
+            href="/teacher/classes"
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+          >
+            Manage classes
+          </Link>
+          <Link
+            href="/teacher/assessments/new"
+            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            Create assessment
+          </Link>
+        </nav>
       </div>
     </main>
   );

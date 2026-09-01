@@ -17,25 +17,40 @@ alter table profiles drop constraint if exists profiles_role_check;
 alter table profiles add constraint profiles_role_check check (role in ('teacher', 'student', 'principal'));
 
 -- 3. Row Level Security for schools table
+-- The principal policy is finalized by migration 0009, which uses a
+-- SECURITY DEFINER helper to avoid querying profiles from its own policy.
 alter table schools enable row level security;
-create policy "schools are viewable by all authenticated users" on schools
-  for select to authenticated using (true);
+create policy "principals can view their school" on schools
+  for select to authenticated using (
+    exists (
+      select 1
+      from profiles principal
+      where principal.id = auth.uid()
+        and principal.role = 'principal'
+        and principal.school_id = schools.id
+    )
+  );
 
 -- 4. RLS for Principals
 -- Principals can see profiles of teachers and students in their school.
 -- (A student is in the school if they belong to a class taught by a teacher in the school, or explicitly assigned).
 create policy "principals see profiles in their school" on profiles
   for select using (
-    auth.uid() in (select id from profiles where role = 'principal' and school_id = profiles.school_id)
+    exists (
+      select 1
+      from profiles principal
+      where principal.id = auth.uid()
+        and principal.role = 'principal'
+        and principal.school_id = profiles.school_id
+    )
     or
     (
-      exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'principal')
-      and 
-      id in (
+      exists (select 1 from profiles principal where principal.id = auth.uid() and principal.role = 'principal')
+      and id in (
         select cm.student_id from class_members cm
         join classes c on c.id = cm.class_id
         join profiles teacher on teacher.id = c.teacher_id
-        where teacher.school_id = (select school_id from profiles where id = auth.uid())
+        where teacher.school_id = (select school_id from profiles where id = auth.uid() and role = 'principal')
       )
     )
   );
