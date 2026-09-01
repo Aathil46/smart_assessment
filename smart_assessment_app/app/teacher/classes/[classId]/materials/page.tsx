@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState } from "react";
 import { use } from "react";
 
@@ -62,6 +63,9 @@ export default function TeacherMaterialsPage({ params }: { params: Promise<{ cla
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
+      <Link href={`/teacher/classes/${classId}`} className="mb-4 inline-block text-sm font-medium text-blue-600 hover:underline">
+        &larr; Back to Class
+      </Link>
       <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <h1 className="text-3xl font-semibold text-slate-900">Upload learning material</h1>
         <p className="mt-2 text-slate-600">Upload a PDF for this class. The backend will extract text and mark the material ready or failed.</p>

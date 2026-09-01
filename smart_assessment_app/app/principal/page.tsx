@@ -39,6 +39,9 @@ export default function PrincipalDashboard() {
       <div className="mb-8 border-b border-slate-200 pb-5">
         <p className="text-sm font-semibold uppercase tracking-wider text-blue-600">Principal Dashboard</p>
         <h1 className="mt-2 text-3xl font-bold text-slate-900">{data.schoolName}</h1>
+        <Link href="/principal" className="mt-3 inline-block text-sm font-medium text-blue-600 hover:underline">
+          Dashboard
+        </Link>
       </div>
 
       <h2 className="mb-4 text-xl font-semibold text-slate-800">Select a Grade</h2>

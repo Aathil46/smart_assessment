@@ -13,6 +13,9 @@ export default async function TeacherClassesPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
+      <Link href="/teacher" className="mb-4 inline-block text-sm font-medium text-blue-600 hover:underline">
+        &larr; Back to Dashboard
+      </Link>
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-600">Classes</p>

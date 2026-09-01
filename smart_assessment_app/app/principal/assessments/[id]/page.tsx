@@ -68,8 +68,11 @@ export default function PrincipalAssessmentResults({ params }: { params: Promise
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
       <div className="mb-6">
+        <Link href="/principal" className="mr-4 text-sm font-medium text-blue-600 hover:underline">
+          Dashboard
+        </Link>
         <button onClick={() => router.back()} className="text-sm font-medium text-blue-600 hover:underline">
-          &larr; Back to Teacher
+          &larr; Back
         </button>
       </div>
 

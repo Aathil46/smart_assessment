@@ -39,6 +39,9 @@ export default function PrincipalTeacherPage({ params }: { params: Promise<{ tea
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
       <div className="mb-6 flex items-center gap-4">
+        <Link href="/principal" className="text-sm font-medium text-blue-600 hover:underline">
+          Dashboard
+        </Link>
         <button onClick={() => router.back()} className="text-sm font-medium text-blue-600 hover:underline">
           &larr; Back
         </button>
