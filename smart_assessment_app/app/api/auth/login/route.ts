@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { toErrorResponse } from "@/lib/errors";
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const loginSchema = z.object({
@@ -24,7 +25,18 @@ export async function POST(request: Request) {
       throw new Error(error?.message ?? "Invalid email or password.");
     }
 
-    return NextResponse.json({ ok: true, userId: data.user.id }, { status: 200 });
+    // Fetch the authenticated user's role so the client can redirect correctly.
+    const admin = createAdminSupabaseClient();
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("role")
+      .eq("id", data.user.id)
+      .single();
+
+    const role: "teacher" | "student" | "principal" | null =
+      (profile?.role as "teacher" | "student" | "principal") ?? null;
+
+    return NextResponse.json({ ok: true, role }, { status: 200 });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

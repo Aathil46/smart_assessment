@@ -1,6 +1,34 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
-export default function HomePage() {
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+
+const ROLE_DASHBOARDS: Record<string, string> = {
+  teacher: "/teacher",
+  student: "/student",
+  principal: "/principal",
+};
+
+export default async function HomePage() {
+  // If the user already has a valid session, redirect them to their dashboard.
+  try {
+    const supabase = await createServerSupabaseClient();
+    const { data: authData } = await supabase.auth.getUser();
+    if (authData?.user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", authData.user.id)
+        .single();
+      const dashboard = profile?.role ? ROLE_DASHBOARDS[profile.role] : null;
+      if (dashboard) {
+        redirect(dashboard);
+      }
+    }
+  } catch {
+    // Not authenticated or env vars missing — fall through to landing page.
+  }
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6 py-12">
       <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-8 shadow-sm md:p-12">

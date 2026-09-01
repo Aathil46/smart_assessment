@@ -30,7 +30,18 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/teacher");
+      const role: string | null = payload?.role ?? null;
+
+      if (role === "teacher") {
+        router.push("/teacher");
+      } else if (role === "student") {
+        router.push("/student");
+      } else if (role === "principal") {
+        router.push("/principal");
+      } else {
+        // Profile missing or unknown role — redirect to a safe fallback.
+        setError("Your account does not have an assigned role. Please contact support.");
+      }
     } catch {
       setError("Unable to log in right now. Please try again.");
     } finally {
