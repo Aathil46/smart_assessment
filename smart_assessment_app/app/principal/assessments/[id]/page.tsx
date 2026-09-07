@@ -1,35 +1,88 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use } from "react";
+import {
+  AiCallout,
+  AppShell,
+  Button,
+  Card,
+  Metric,
+  PageHeader,
+  ProgressBar,
+  Status,
+} from "@/app/components/ui";
 
-export default function PrincipalAssessmentResults({ params }: { params: Promise<{ id: string }> }) {
+type Concept = {
+  concept: string;
+  accuracyPercentage: number;
+  level: string;
+};
+
+type ResultsData = {
+  assessment: {
+    class_name: string;
+    teacher_name: string;
+    title: string;
+  };
+  overview: {
+    totalStudents: number;
+    completed: number;
+    passed: number;
+    failed: number;
+  };
+  weakConcepts: Concept[];
+  mediumConcepts: Concept[];
+};
+
+export default function PrincipalAssessmentResults({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = use(params);
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<ResultsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [aiReview, setAiReview] = useState<string | null>(null);
   const [generatingReview, setGeneratingReview] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
+    let active = true;
     fetch(`/api/principal/assessments/${id}/results`)
       .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch results");
+        if (!res.ok) throw new Error("Failed to fetch assessment analytics.");
         return res.json();
       })
-      .then((d) => {
-        setData(d);
-        setLoading(false);
+      .then((result) => {
+        if (active) setData(result);
       })
-      .catch(() => {
-        router.back();
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : "Unable to load analytics.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
-  }, [id, router]);
+    return () => {
+      active = false;
+    };
+  }, [id]);
+
+  const completionRate = useMemo(() => {
+    if (!data?.overview.totalStudents) return 0;
+    return Math.round((data.overview.completed / data.overview.totalStudents) * 100);
+  }, [data]);
+
+  const passRate = useMemo(() => {
+    if (!data?.overview.completed) return 0;
+    return Math.round((data.overview.passed / data.overview.completed) * 100);
+  }, [data]);
 
   const generateReview = async () => {
+    if (!data) return;
     setGeneratingReview(true);
     setReviewError(null);
     try {
@@ -39,17 +92,15 @@ export default function PrincipalAssessmentResults({ params }: { params: Promise
         body: JSON.stringify({
           passed: data.overview.passed,
           failed: data.overview.failed,
-          weakConcepts: data.weakConcepts.map((c: any) => c.concept),
+          weakConcepts: data.weakConcepts.map((concept) => concept.concept),
         }),
       });
-      const d = await res.json();
-      if (!res.ok) {
-        throw new Error(d?.error?.message ?? "Unable to generate AI review.");
-      }
-      if (d.review) setAiReview(d.review);
-      else throw new Error("AI review generation returned no review.");
-    } catch (error) {
-      setReviewError(error instanceof Error ? error.message : "Unable to generate AI review.");
+      const result = await res.json();
+      if (!res.ok) throw new Error(result?.error?.message ?? "Unable to generate AI review.");
+      if (!result.review) throw new Error("AI review generation returned no review.");
+      setAiReview(result.review);
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : "Unable to generate AI review.");
     } finally {
       setGeneratingReview(false);
     }
@@ -57,124 +108,164 @@ export default function PrincipalAssessmentResults({ params }: { params: Promise
 
   if (loading) {
     return (
-      <main className="mx-auto max-w-6xl px-6 py-10">
-        <p className="text-slate-500">Loading assessment summary...</p>
-      </main>
+      <AppShell role="principal">
+        <div className="space-y-6">
+          <div className="sa-skeleton h-5 w-28 rounded" />
+          <div className="sa-skeleton h-12 w-2/3 rounded-xl" />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[1, 2, 3, 4].map((item) => (
+              <div key={item} className="sa-skeleton h-32 rounded-2xl" />
+            ))}
+          </div>
+          <div className="grid gap-6 lg:grid-cols-3">
+            <div className="sa-skeleton h-96 rounded-2xl lg:col-span-2" />
+            <div className="sa-skeleton h-80 rounded-2xl" />
+          </div>
+        </div>
+      </AppShell>
     );
   }
 
-  if (!data) return null;
+  if (error || !data) {
+    return (
+      <AppShell role="principal">
+        <Card className="mx-auto max-w-xl p-8 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--error-soft)] text-[var(--error)]">!</div>
+          <h1 className="text-lg font-semibold text-[var(--foreground)]">Analytics unavailable</h1>
+          <p className="mt-2 text-sm text-[var(--muted)]">{error ?? "We could not load this assessment."}</p>
+          <div className="mt-6 flex justify-center gap-3">
+            <Button onClick={() => window.location.reload()}>Try again</Button>
+            <Link href="/principal/assessments" className="inline-flex items-center rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel-muted)]">Back to assessments</Link>
+          </div>
+        </Card>
+      </AppShell>
+    );
+  }
+
+  const { overview } = data;
+  const conceptCount = data.weakConcepts.length + data.mediumConcepts.length;
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
-      <div className="mb-6">
-        <Link href="/principal" className="mr-4 text-sm font-medium text-blue-600 hover:underline">
-          Dashboard
+    <AppShell role="principal">
+      <div className="space-y-8">
+        <Link href="/principal/assessments" className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--muted)] transition hover:text-[var(--foreground)]">
+          <span aria-hidden="true">←</span> Assessment portfolio
         </Link>
-        <button onClick={() => router.back()} className="text-sm font-medium text-blue-600 hover:underline">
-          &larr; Back
-        </button>
-      </div>
 
-      <div className="mb-8 border-b border-slate-200 pb-6">
-        <p className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-          {data.assessment.class_name} • {data.assessment.teacher_name}
-        </p>
-        <h1 className="mt-2 text-3xl font-bold text-slate-900">{data.assessment.title}</h1>
-        <p className="mt-2 text-slate-600">Overview of student performance and weak concepts.</p>
-      </div>
+        <PageHeader
+          eyebrow={`${data.assessment.class_name} · ${data.assessment.teacher_name}`}
+          title={data.assessment.title}
+          description="School-level view of participation, outcomes, and concepts that may need instructional attention."
+          action={
+            <Button variant="secondary" onClick={() => router.back()}>
+              Back
+            </Button>
+          }
+        />
 
-      <div className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm font-medium text-slate-500">Total Students</p>
-          <p className="mt-2 text-3xl font-bold text-slate-900">{data.overview.totalStudents}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm font-medium text-slate-500">Completed</p>
-          <p className="mt-2 text-3xl font-bold text-blue-600">{data.overview.completed}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-emerald-50 p-5 shadow-sm">
-          <p className="text-sm font-medium text-emerald-700">Passed</p>
-          <p className="mt-2 text-3xl font-bold text-emerald-700">{data.overview.passed}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-red-50 p-5 shadow-sm">
-          <p className="text-sm font-medium text-red-700">Failed</p>
-          <p className="mt-2 text-3xl font-bold text-red-700">{data.overview.failed}</p>
-        </div>
-      </div>
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Assessment metrics">
+          <Metric label="Students" value={overview.totalStudents} detail="Enrolled in class" />
+          <Metric label="Completed" value={overview.completed} detail={`${completionRate}% participation`} />
+          <Metric label="Passed" value={overview.passed} detail={`${passRate}% of completed`} tone="success" />
+          <Metric label="Failed" value={overview.failed} detail={overview.completed ? `${100 - passRate}% of completed` : "No completed attempts"} tone="danger" />
+        </section>
 
-      <div className="grid gap-8 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <h2 className="mb-4 text-xl font-bold text-slate-900">Concept Analytics</h2>
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-6 py-4 font-semibold text-slate-700">Concept</th>
-                  <th className="px-6 py-4 font-semibold text-slate-700">Accuracy</th>
-                  <th className="px-6 py-4 font-semibold text-slate-700">Level</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {data.weakConcepts.map((c: any) => (
-                  <tr key={c.concept}>
-                    <td className="px-6 py-4 font-medium text-slate-900">{c.concept}</td>
-                    <td className="px-6 py-4 text-slate-600">{c.accuracyPercentage}%</td>
-                    <td className="px-6 py-4">
-                      <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
-                        {c.level}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-                {data.mediumConcepts.map((c: any) => (
-                  <tr key={c.concept}>
-                    <td className="px-6 py-4 font-medium text-slate-900">{c.concept}</td>
-                    <td className="px-6 py-4 text-slate-600">{c.accuracyPercentage}%</td>
-                    <td className="px-6 py-4">
-                      <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                        {c.level}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-                {data.weakConcepts.length === 0 && data.mediumConcepts.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="px-6 py-8 text-center text-slate-500">
-                      No weak or medium concepts found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <section className="grid gap-6 lg:grid-cols-3">
+          <Card className="sa-fade-up p-6 lg:col-span-2">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">Participation</p>
+                <h2 className="mt-1 text-lg font-semibold text-[var(--foreground)]">Assessment reach</h2>
+              </div>
+              <Status tone={completionRate >= 80 ? "success" : completionRate >= 50 ? "warning" : "danger"}>
+                {completionRate}% complete
+              </Status>
+            </div>
+            <div className="mt-7">
+              <div className="mb-2 flex items-center justify-between text-sm">
+                <span className="text-[var(--muted)]">Completed attempts</span>
+                <span className="font-semibold text-[var(--foreground)]">{overview.completed} / {overview.totalStudents}</span>
+              </div>
+              <ProgressBar value={completionRate} tone="primary" />
+            </div>
+            <div className="mt-7 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-xl bg-[var(--success-soft)] p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-[var(--success)]">Outcome</p>
+                <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">{passRate}%</p>
+                <p className="mt-1 text-sm text-[var(--muted)]">Pass rate among completed attempts</p>
+              </div>
+              <div className="rounded-xl bg-[var(--warning-soft)] p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-[var(--warning)]">Concept signals</p>
+                <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">{conceptCount}</p>
+                <p className="mt-1 text-sm text-[var(--muted)]">Weak or medium concepts detected</p>
+              </div>
+            </div>
+          </Card>
 
-        <div>
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-lg font-bold text-slate-900">AI Review</h2>
+          <AiCallout title="School insight" eyebrow="AI-assisted review">
             {aiReview ? (
-              <div className="rounded-lg bg-blue-50 p-4 text-sm leading-relaxed text-blue-900">
-                {aiReview}
+              <div className="space-y-4">
+                <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--foreground)]">{aiReview}</p>
+                <Button variant="secondary" onClick={generateReview} disabled={generatingReview}>
+                  {generatingReview ? "Refreshing…" : "Refresh review"}
+                </Button>
               </div>
             ) : (
-              <div>
-                <p className="mb-4 text-sm text-slate-500">
-                  Generate an AI summary of this assessment using aggregated data only.
-                </p>
-                {reviewError ? <p className="mb-4 text-sm text-red-600">{reviewError}</p> : null}
-                <button
-                  onClick={generateReview}
-                  disabled={generatingReview}
-                  className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {generatingReview ? "Generating..." : "Generate AI Review"}
-                </button>
-              </div>
+              <>
+                <p className="text-sm leading-6 text-[var(--muted)]">Generate a concise instructional summary from aggregated assessment outcomes and weak concepts.</p>
+                {reviewError ? <p role="alert" className="mt-3 rounded-lg bg-[var(--error-soft)] p-3 text-sm text-[var(--error)]">{reviewError}</p> : null}
+                <Button className="mt-4" onClick={generateReview} disabled={generatingReview}>
+                  {generatingReview ? "Generating…" : "Generate AI review"}
+                </Button>
+              </>
             )}
+          </AiCallout>
+        </section>
+
+        <section className="space-y-4 sa-fade-up sa-delay-1">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">Learning signals</p>
+              <h2 className="mt-1 text-xl font-semibold text-[var(--foreground)]">Concept analytics</h2>
+              <p className="mt-1 text-sm text-[var(--muted)]">Prioritize concepts with the lowest accuracy before reviewing broader school trends.</p>
+            </div>
           </div>
-        </div>
+
+          {conceptCount === 0 ? (
+            <Card className="p-8 text-center">
+              <p className="font-semibold text-[var(--foreground)]">No attention signals yet</p>
+              <p className="mt-1 text-sm text-[var(--muted)]">There are no weak or medium concepts in the aggregated results for this assessment.</p>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {[...data.weakConcepts, ...data.mediumConcepts]
+                .sort((a, b) => a.accuracyPercentage - b.accuracyPercentage)
+                .map((concept, index) => {
+                  const weak = data.weakConcepts.some((item) => item.concept === concept.concept);
+                  return (
+                    <Card key={`${concept.concept}-${index}`} className="p-5 transition duration-200 hover:-translate-y-0.5 hover:shadow-md">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-[var(--foreground)]">{concept.concept}</p>
+                          <p className="mt-1 text-xs text-[var(--muted)]">Aggregated concept accuracy</p>
+                        </div>
+                        <Status tone={weak ? "danger" : "warning"}>{concept.level}</Status>
+                      </div>
+                      <div className="mt-5">
+                        <div className="mb-2 flex items-center justify-between text-sm">
+                          <span className="text-[var(--muted)]">Accuracy</span>
+                          <span className="font-bold text-[var(--foreground)]">{concept.accuracyPercentage}%</span>
+                        </div>
+                        <ProgressBar value={concept.accuracyPercentage} tone={weak ? "danger" : "warning"} />
+                      </div>
+                      {weak ? <p className="mt-4 text-xs font-medium text-[var(--error)]">Priority reteaching signal</p> : <p className="mt-4 text-xs font-medium text-[var(--warning)]">Monitor this concept</p>}
+                    </Card>
+                  );
+                })}
+            </div>
+          )}
+        </section>
       </div>
-    </main>
+    </AppShell>
   );
 }
