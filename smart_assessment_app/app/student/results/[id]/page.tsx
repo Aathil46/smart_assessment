@@ -1,363 +1,66 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { ArrowLeft, CheckCircle2, CircleAlert, Sparkles, Target, Trophy } from "lucide-react";
 
-/* ---------- Types matching the backend API response ---------- */
+import { AppShell, Card, PageHeader, ProgressBar, Status } from "@/app/components/ui";
 
-type ConceptPerf = {
-  concept: string;
-  correctCount: number;
-  totalCount: number;
-  accuracy: number;
-  accuracyPercentage: number;
-  level: "Strong" | "Medium" | "Weak";
-};
+type ConceptPerf = { concept: string; correctCount: number; totalCount: number; accuracy: number; accuracyPercentage: number; level: "Strong" | "Medium" | "Weak" };
+type LearningGap = { concept: string; gap_level: string; notes: string | null; recommendations: string[] };
+type AttemptInfo = { id: string; assessment_id: string; score: number; total: number; percentage: number; passFail: "Pass" | "Fail"; isWeakStudent: boolean; submitted_at: string | null; started_at: string };
+type ResultData = { status?: string; message?: string; attempt: AttemptInfo; assessment: { title: string; topic: string | null } | null; conceptPerformance: ConceptPerf[]; gaps: LearningGap[]; error?: { code: string; message: string } };
 
-type LearningGap = {
-  concept: string;
-  gap_level: string;
-  notes: string | null;
-  recommendations: string[];
-};
+const levelTone = { Strong: "success", Medium: "warning", Weak: "error" } as const;
 
-type AttemptInfo = {
-  id: string;
-  assessment_id: string;
-  score: number;
-  total: number;
-  percentage: number;
-  passFail: "Pass" | "Fail";
-  isWeakStudent: boolean;
-  submitted_at: string | null;
-  started_at: string;
-};
-
-type AssessmentInfo = {
-  title: string;
-  topic: string | null;
-};
-
-type ResultData = {
-  status?: string;
-  message?: string;
-  attempt: AttemptInfo;
-  assessment: AssessmentInfo | null;
-  conceptPerformance: ConceptPerf[];
-  gaps: LearningGap[];
-  error?: { code: string; message: string };
-};
-
-/* ---------- Visual helpers ---------- */
-
-const LEVEL_CONFIG = {
-  Strong: {
-    bg: "bg-emerald-50",
-    border: "border-emerald-200",
-    text: "text-emerald-700",
-    badge: "bg-emerald-100 text-emerald-800",
-    barColor: "bg-emerald-500",
-  },
-  Medium: {
-    bg: "bg-amber-50",
-    border: "border-amber-200",
-    text: "text-amber-700",
-    badge: "bg-amber-100 text-amber-800",
-    barColor: "bg-amber-500",
-  },
-  Weak: {
-    bg: "bg-red-50",
-    border: "border-red-200",
-    text: "text-red-700",
-    badge: "bg-red-100 text-red-800",
-    barColor: "bg-red-500",
-  },
-} as const;
-
-function getLevelConfig(level: string) {
-  return LEVEL_CONFIG[level as keyof typeof LEVEL_CONFIG] ?? LEVEL_CONFIG.Medium;
-}
-
-/* ---------- Component ---------- */
-
-export default function ResultPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default function ResultPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [data, setData] = useState<ResultData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setLoading(true);
     fetch(`/api/results/student/${id}`)
-      .then((r) => {
-        if (!r.ok) throw new Error("Unable to load result.");
-        return r.json();
-      })
-      .then((d) => {
-        if (d.error) {
-          setError(d.error.message ?? "Unable to load result.");
-        } else {
-          setData(d);
-        }
-      })
-      .catch((err) => setError(err.message))
+      .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d?.error?.message ?? "Unable to load result."); return d; })
+      .then((d) => d.error ? setError(d.error.message ?? "Unable to load result.") : setData(d))
+      .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [id]);
 
-  /* Loading state */
-  if (loading) {
-    return (
-      <main className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
-          <p className="mt-4 text-slate-500">Loading your results…</p>
-        </div>
-      </main>
-    );
-  }
+  if (loading) return <main className="min-h-screen bg-[var(--background)] px-5 py-10"><div className="mx-auto max-w-6xl space-y-6"><div className="h-7 w-40 animate-pulse rounded bg-slate-200"/><div className="h-52 animate-pulse rounded-3xl bg-white"/><div className="h-64 animate-pulse rounded-3xl bg-white"/></div></main>;
 
-  /* Error state */
-  if (error || !data) {
-    return (
-      <main className="mx-auto max-w-2xl px-6 py-16 text-center">
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-8">
-          <h1 className="text-xl font-semibold text-red-800">
-            Unable to load result
-          </h1>
-          <p className="mt-2 text-red-600">{error ?? "Please try again."}</p>
-          <Link
-            href="/student"
-            className="mt-6 inline-block rounded-lg bg-red-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-red-700"
-          >
-            Back to Dashboard
-          </Link>
-        </div>
-      </main>
-    );
-  }
+  if (error || !data) return <main className="min-h-screen bg-[var(--background)] px-5 py-16"><div className="mx-auto max-w-lg rounded-3xl border border-[var(--error)]/20 bg-white p-8 text-center shadow-sm"><CircleAlert className="mx-auto text-[var(--error)]" size={36}/><h1 className="mt-4 text-xl font-semibold">Unable to load result</h1><p className="mt-2 text-sm text-[var(--muted)]">{error ?? "Please try again."}</p><Link href="/student" className="mt-6 inline-flex rounded-xl bg-[var(--primary)] px-5 py-2.5 text-sm font-semibold text-white">Back to dashboard</Link></div></main>;
 
-  /* In-progress state */
-  if (data.status === "in_progress" || !data.attempt.submitted_at) {
-    return (
-      <main className="mx-auto max-w-2xl px-6 py-16 text-center">
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-8">
-          <h1 className="text-xl font-semibold text-amber-800">
-            Assessment In Progress
-          </h1>
-          <p className="mt-2 text-amber-600">
-            {data.message ?? "This assessment has not been submitted yet."}
-          </p>
-          <Link
-            href="/student"
-            className="mt-6 inline-block rounded-lg bg-amber-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-amber-700"
-          >
-            Back to Dashboard
-          </Link>
-        </div>
-      </main>
-    );
-  }
+  if (data.status === "in_progress" || !data.attempt.submitted_at) return <AppShell role="student"><div className="mx-auto max-w-2xl"><Card className="sa-fade-up p-8 text-center"><div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[var(--warning-soft)] text-[var(--warning)]"><CircleAlert size={24}/></div><h1 className="mt-5 text-2xl font-semibold">Assessment in progress</h1><p className="mt-2 text-sm text-[var(--muted)]">{data.message ?? "This assessment has not been submitted yet."}</p><Link href="/student" className="mt-6 inline-flex rounded-xl bg-[var(--primary)] px-5 py-2.5 text-sm font-semibold text-white">Back to dashboard</Link></Card></div></AppShell>;
 
   const { attempt, assessment, conceptPerformance, gaps } = data;
-  const isPassed = attempt.passFail === "Pass";
+  const passed = attempt.passFail === "Pass";
+  const strongCount = conceptPerformance.filter((c) => c.level === "Strong").length;
+  const weakCount = conceptPerformance.filter((c) => c.level === "Weak").length;
+  const avgConcept = useMemo(() => conceptPerformance.length ? Math.round(conceptPerformance.reduce((sum, c) => sum + c.accuracyPercentage, 0) / conceptPerformance.length) : attempt.percentage, [conceptPerformance, attempt.percentage]);
 
-  return (
-    <main className="mx-auto max-w-3xl px-6 py-10">
-      {/* Back link */}
-      <Link
-        href="/student"
-        className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-blue-600"
-      >
-        <svg
-          className="h-4 w-4"
-          fill="none"
-          viewBox="0 0 24 24"
-          strokeWidth={2}
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M15.75 19.5L8.25 12l7.5-7.5"
-          />
-        </svg>
-        Back to Dashboard
-      </Link>
+  return <AppShell role="student">
+    <div className="space-y-7">
+      <Link href="/student" className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--muted)] transition hover:text-[var(--foreground)]"><ArrowLeft size={16}/> Back to dashboard</Link>
 
-      {/* ─── Header: Assessment title ─── */}
-      <header className="mt-6">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-          {assessment?.title ?? "Assessment Result"}
-        </h1>
-        {assessment?.topic && (
-          <p className="mt-1 text-slate-500">{assessment.topic}</p>
-        )}
-      </header>
+      <PageHeader eyebrow="Assessment result" title={assessment?.title ?? "Assessment result"} description={assessment?.topic ?? "Here is a breakdown of your understanding by concept."} />
 
-      {/* ─── Overall Score Card ─── */}
-      <section
-        id="overall-score"
-        className={`mt-8 rounded-2xl border-2 p-6 ${
-          isPassed
-            ? "border-emerald-200 bg-gradient-to-br from-emerald-50 to-white"
-            : "border-red-200 bg-gradient-to-br from-red-50 to-white"
-        }`}
-      >
-        <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
-          <div className="text-center sm:text-left">
-            <p className="text-sm font-medium uppercase tracking-wider text-slate-500">
-              Your Score
-            </p>
-            <p className="mt-1 text-4xl font-extrabold tabular-nums text-slate-900">
-              {attempt.score}{" "}
-              <span className="text-xl font-medium text-slate-400">
-                / {attempt.total}
-              </span>
-            </p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-700">
-              {attempt.percentage}%
-            </p>
-          </div>
-
-          <div className="text-center">
-            <span
-              className={`inline-block rounded-full px-5 py-2 text-lg font-bold ${
-                isPassed
-                  ? "bg-emerald-100 text-emerald-800"
-                  : "bg-red-100 text-red-800"
-              }`}
-            >
-              {attempt.passFail}
-            </span>
-          </div>
+      <section className={`sa-fade-up overflow-hidden rounded-3xl border p-6 shadow-sm sm:p-8 ${passed ? "border-[var(--success)]/20 bg-[var(--success-soft)]" : "border-[var(--error)]/20 bg-[var(--error-soft)]"}`}>
+        <div className="flex flex-col gap-7 md:flex-row md:items-center md:justify-between">
+          <div><div className="flex items-center gap-3"><div className={`grid h-11 w-11 place-items-center rounded-2xl bg-white ${passed ? "text-[var(--success)]" : "text-[var(--error)]"}`}>{passed ? <Trophy size={22}/> : <Target size={22}/>}</div><Status tone={passed ? "success" : "error"}>{attempt.passFail}</Status></div><p className="mt-6 text-xs font-semibold uppercase tracking-[.14em] text-[var(--muted)]">Your score</p><div className="mt-1 flex items-baseline gap-2"><span className="text-5xl font-bold tracking-[-.04em] tabular-nums">{attempt.percentage}%</span><span className="text-sm text-[var(--muted)]">{attempt.score} of {attempt.total} correct</span></div></div>
+          <div className="grid grid-cols-3 gap-3 md:w-[360px]"><div className="rounded-2xl bg-white/80 p-4"><p className="text-xs text-[var(--muted)]">Concepts</p><p className="mt-1 text-xl font-bold">{conceptPerformance.length}</p></div><div className="rounded-2xl bg-white/80 p-4"><p className="text-xs text-[var(--muted)]">Strong</p><p className="mt-1 text-xl font-bold text-[var(--success)]">{strongCount}</p></div><div className="rounded-2xl bg-white/80 p-4"><p className="text-xs text-[var(--muted)]">Needs work</p><p className="mt-1 text-xl font-bold text-[var(--error)]">{weakCount}</p></div></div>
         </div>
       </section>
 
-      {/* ─── Concept Performance ─── */}
-      {conceptPerformance.length > 0 && (
-        <section id="concept-performance" className="mt-10">
-          <h2 className="text-xl font-bold text-slate-900">
-            Concept Performance
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            How you performed across each concept in this assessment
-          </p>
+      <div className="grid gap-6 lg:grid-cols-[1.35fr_.65fr]">
+        <Card className="sa-fade-up sa-delay-1 p-6 sm:p-7"><div className="flex items-end justify-between gap-4"><div><h2 className="text-lg font-semibold">Concept performance</h2><p className="mt-1 text-sm text-[var(--muted)]">See where your understanding is strong and where to focus next.</p></div><span className="text-sm font-semibold text-[var(--primary)]">{avgConcept}% avg.</span></div><div className="mt-6 space-y-5">{conceptPerformance.map((cp) => <div key={cp.concept}><div className="mb-2 flex items-center justify-between gap-4"><div className="min-w-0"><p className="truncate text-sm font-semibold">{cp.concept}</p><p className="mt-0.5 text-xs text-[var(--muted)]">{cp.correctCount} / {cp.totalCount} correct</p></div><Status tone={levelTone[cp.level]}>{cp.level}</Status></div><ProgressBar value={cp.accuracyPercentage}/></div>)}</div></Card>
 
-          <div className="mt-5 space-y-3">
-            {conceptPerformance.map((cp) => {
-              const config = getLevelConfig(cp.level);
-              return (
-                <div
-                  key={cp.concept}
-                  className={`rounded-xl border p-4 ${config.bg} ${config.border}`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-slate-800">
-                        {cp.concept}
-                      </p>
-                      <p className="mt-0.5 text-sm text-slate-500">
-                        {cp.correctCount} / {cp.totalCount} correct
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <span className="text-lg font-bold tabular-nums text-slate-800">
-                        {cp.accuracyPercentage}%
-                      </span>
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-bold ${config.badge}`}
-                      >
-                        {cp.level}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Progress bar */}
-                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${config.barColor}`}
-                      style={{
-                        width: `${Math.min(cp.accuracyPercentage, 100)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {/* ─── Learning Gaps ─── */}
-      {gaps.length > 0 && (
-        <section id="learning-gaps" className="mt-10">
-          <h2 className="text-xl font-bold text-slate-900">
-            <span className="mr-2">⚠</span>
-            Learning Gaps
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            These concepts need your attention — review them to improve your
-            understanding
-          </p>
-
-          <div className="mt-5 space-y-4">
-            {gaps.map((gap) => (
-              <div
-                key={gap.concept}
-                className="rounded-xl border-2 border-red-200 bg-white p-5"
-              >
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-100 text-sm text-red-600">
-                    !
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-bold text-red-800">{gap.concept}</h3>
-
-                    {gap.notes ? (
-                      <p className="mt-2 leading-relaxed text-slate-600">
-                        {gap.notes}
-                      </p>
-                    ) : (
-                      <p className="mt-2 text-sm italic text-slate-400">
-                        Review the {gap.concept} section of your learning
-                        material to strengthen this area.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* ─── No gaps message ─── */}
-      {gaps.length === 0 && conceptPerformance.length > 0 && (
-        <section className="mt-10 rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-center">
-          <p className="font-semibold text-emerald-800">
-            🎉 No learning gaps detected!
-          </p>
-          <p className="mt-1 text-sm text-emerald-600">
-            Great work — you demonstrated solid understanding across all
-            concepts.
-          </p>
-        </section>
-      )}
-
-      {/* ─── Footer ─── */}
-      <div className="mt-10 border-t border-slate-200 pt-6 text-center">
-        <Link
-          href="/student"
-          className="inline-block rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          Back to Dashboard
-        </Link>
+        <div className="space-y-6"><Card className="sa-fade-up sa-delay-2 p-6"><div className="flex items-center gap-3"><div className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--ai-soft)] text-[var(--ai)]"><Sparkles size={18}/></div><h2 className="font-semibold">Learning signal</h2></div><p className="mt-4 text-sm leading-6 text-[var(--muted)]">{gaps.length ? `You have ${gaps.length} concept${gaps.length === 1 ? "" : "s"} worth revisiting. Start with the weakest area, then retest yourself.` : "You showed solid understanding across the assessed concepts. Keep practicing to retain it."}</p></Card><Card className="sa-fade-up sa-delay-3 p-6"><h2 className="font-semibold">What this means</h2><div className="mt-4 space-y-3 text-sm text-[var(--muted)]"><div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 shrink-0 text-[var(--success)]" size={17}/><p>Strong concepts are areas you can confidently build on.</p></div><div className="flex items-start gap-3"><CircleAlert className="mt-0.5 shrink-0 text-[var(--warning)]" size={17}/><p>Medium concepts may benefit from a quick review.</p></div><div className="flex items-start gap-3"><CircleAlert className="mt-0.5 shrink-0 text-[var(--error)]" size={17}/><p>Weak concepts should be your first practice priority.</p></div></div></Card></div>
       </div>
-    </main>
-  );
+
+      {gaps.length > 0 ? <Card className="sa-fade-up sa-delay-4 p-6 sm:p-7"><div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-lg font-semibold">Learning gaps</h2><p className="mt-1 text-sm text-[var(--muted)]">Priorities generated from your assessment performance.</p></div><Status tone="error">{gaps.length} to review</Status></div><div className="mt-6 grid gap-4 md:grid-cols-2">{gaps.map((gap) => <article key={gap.concept} className="rounded-2xl border border-[var(--error)]/15 bg-[var(--error-soft)]/45 p-5 transition duration-200 hover:-translate-y-0.5"><div className="flex items-start justify-between gap-4"><div><h3 className="font-semibold">{gap.concept}</h3>{gap.notes && <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{gap.notes}</p>}</div><span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--error)]">{gap.gap_level}</span></div>{gap.recommendations?.length > 0 && <div className="mt-4 border-t border-[var(--error)]/10 pt-4"><p className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">Recommended next steps</p><ul className="mt-2 space-y-2">{gap.recommendations.slice(0, 3).map((r, i) => <li key={i} className="flex gap-2 text-sm leading-5 text-[var(--muted)]"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--error)]"/>{r}</li>)}</ul></div>}</article>)}</div></Card> : <Card className="sa-fade-up sa-delay-4 border-[var(--success)]/20 bg-[var(--success-soft)]/50 p-7 text-center"><div className="mx-auto grid h-11 w-11 place-items-center rounded-full bg-white text-[var(--success)]"><CheckCircle2 size={24}/></div><h2 className="mt-4 text-lg font-semibold">No learning gaps detected</h2><p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[var(--muted)]">Great work. You demonstrated solid understanding across the concepts assessed here.</p></Card>}
+
+      <div className="flex flex-col gap-3 border-t border-[var(--border)] pt-6 sm:flex-row sm:justify-between"><Link href="/student" className="inline-flex h-11 items-center justify-center rounded-xl border border-[var(--border)] bg-white px-5 text-sm font-semibold transition hover:bg-slate-50">Back to dashboard</Link>{gaps.length > 0 && <Link href="/student/gaps" className="inline-flex h-11 items-center justify-center rounded-xl bg-[var(--primary)] px-5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[var(--primary-strong)]">Review learning gaps</Link>}</div>
+    </div>
+  </AppShell>;
 }
