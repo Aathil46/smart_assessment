@@ -83,7 +83,7 @@ export default function PrincipalTeacherPage({
           <p className="mt-2 text-sm text-[var(--muted)]">{error ?? "We could not load this teacher."}</p>
           <div className="mt-6 flex justify-center gap-3">
             <Button onClick={() => window.location.reload()}>Try again</Button>
-            <Link href="/principal/teachers" className="inline-flex items-center rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel-muted)]">Back to teachers</Link>
+            <Link href="/principal" className="inline-flex items-center rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel-muted)]">Back to overview</Link>
           </div>
         </Card>
       </AppShell>
@@ -93,8 +93,8 @@ export default function PrincipalTeacherPage({
   return (
     <AppShell role="principal">
       <div className="space-y-8">
-        <Link href="/principal/teachers" className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--muted)] transition hover:text-[var(--foreground)]">
-          <span aria-hidden="true">←</span> Teacher directory
+        <Link href="/principal" className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--muted)] transition hover:text-[var(--foreground)]">
+          <span aria-hidden="true">←</span> School overview
         </Link>
 
         <PageHeader
@@ -132,7 +132,7 @@ export default function PrincipalTeacherPage({
                   <Link
                     key={assessment.id}
                     href={`/principal/assessments/${assessment.id}`}
-                    className={`group flex flex-col gap-4 py-5 transition duration-200 hover:bg-[var(--panel-muted)] sm:flex-row sm:items-center sm:justify-between ${index === 0 ? "" : ""}`}
+                    className="group flex flex-col gap-4 py-5 transition duration-200 hover:bg-[var(--panel-muted)] sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="min-w-0">
                       <div className="flex items-center gap-3">
@@ -144,7 +144,7 @@ export default function PrincipalTeacherPage({
                       </div>
                     </div>
                     <div className="flex items-center gap-2 pl-12 sm:pl-0">
-                      {assessment.grade !== null && assessment.grade !== undefined ? <Status tone="primary">Grade {assessment.grade}</Status> : null}
+                      {assessment.grade !== null && assessment.grade !== undefined ? <Status tone="neutral">Grade {assessment.grade}</Status> : null}
                       {assessment.subject ? <Status tone="neutral">{assessment.subject}</Status> : null}
                       <span aria-hidden="true" className="ml-1 text-lg text-[var(--muted-foreground)] transition group-hover:translate-x-0.5 group-hover:text-[var(--primary)]">→</span>
                     </div>
