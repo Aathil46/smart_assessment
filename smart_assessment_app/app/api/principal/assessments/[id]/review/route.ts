@@ -2,16 +2,29 @@ import { NextResponse } from "next/server";
 
 import { aggregateClassPerformance } from "@/lib/analytics";
 import { requirePrincipalSession } from "@/lib/auth/principal";
-import { generatePrincipalReview } from "@/lib/gemini/principal";
+import { generatePrincipalReview, type PrincipalReviewDiagnostics } from "@/lib/gemini/principal";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  let principalUserId = "unknown";
+  let requestPayload: unknown = null;
+  let reviewInput: { passed: number; failed: number; weakConcepts: string[] } | null = null;
+  let geminiDiagnostics: PrincipalReviewDiagnostics | null = null;
+
+  const debugResponse = () =>
+    process.env.NODE_ENV === "production"
+      ? {}
+      : { _debug: { principalUserId, requestPayload, reviewInput, gemini: geminiDiagnostics } };
+
   try {
     const { id } = await params;
-    const { profile } = await requirePrincipalSession();
+    requestPayload = await _request.json().catch(() => null);
+    const { user, profile } = await requirePrincipalSession();
+    principalUserId = user.id;
+    console.info("[principal review] request", JSON.stringify({ principalUserId, assessmentId: id, requestPayload }));
 
     if (!profile.school_id) {
-      return NextResponse.json({ error: { message: "Principal is not assigned to a school." } }, { status: 403 });
+      return NextResponse.json({ error: { message: "Principal is not assigned to a school." }, ...debugResponse() }, { status: 403 });
     }
 
     const supabase = await createServerSupabaseClient();
@@ -23,7 +36,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       .single();
 
     if (assessmentError || !assessment) {
-      return NextResponse.json({ error: { message: "Assessment not found." } }, { status: 404 });
+      return NextResponse.json({ error: { message: "Assessment not found." }, ...debugResponse() }, { status: 404 });
     }
 
     const teacherId = Array.isArray((assessment as any).classes)
@@ -31,7 +44,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       : (assessment as any).classes?.teacher_id;
 
     if (!teacherId) {
-      return NextResponse.json({ error: { message: "Assessment teacher not found." } }, { status: 404 });
+      return NextResponse.json({ error: { message: "Assessment teacher not found." }, ...debugResponse() }, { status: 404 });
     }
 
     const { data: teacherProfile, error: teacherProfileError } = await supabase
@@ -41,7 +54,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       .single();
 
     if (teacherProfileError || !teacherProfile || teacherProfile.school_id !== profile.school_id) {
-      return NextResponse.json({ error: { message: "Assessment is not in this principal's school." } }, { status: 403 });
+      return NextResponse.json({ error: { message: "Assessment is not in this principal's school." }, ...debugResponse() }, { status: 403 });
     }
 
     const { data: members } = await supabase.from("class_members").select("student_id").eq("class_id", assessment.class_id);
@@ -64,7 +77,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     if (attemptIds.length > 0) {
       const { data: conceptData } = await supabase
         .from("concept_perf")
-        .select("attempt_id, concept, correct_count, total_count, accuracy, level")
+        .select("attempt_id, concept, correct_count, total_count, accuracy")
         .in("attempt_id", attemptIds);
       conceptPerfs = conceptData ?? [];
     }
@@ -76,18 +89,24 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       conceptPerfs,
     );
 
-    const review = await generatePrincipalReview({
+    reviewInput = {
       passed: performanceResult.overview.passed,
       failed: performanceResult.overview.failed,
       weakConcepts: performanceResult.weakConcepts.map((concept) => concept.concept),
+    };
+    console.info("[principal review] generated input", JSON.stringify({ principalUserId, assessmentId: id, reviewInput }));
+    const review = await generatePrincipalReview(reviewInput, (diagnostics) => {
+      geminiDiagnostics = diagnostics;
+      console.info("[principal review] Gemini diagnostics", JSON.stringify(diagnostics));
     });
 
     if (!review) {
-      return NextResponse.json({ error: { message: "AI review generation failed." } }, { status: 500 });
+      return NextResponse.json({ error: { message: "AI review generation failed." }, ...debugResponse() }, { status: 500 });
     }
 
-    return NextResponse.json({ review });
+    return NextResponse.json({ review, ...debugResponse() });
   } catch (error: any) {
-    return NextResponse.json({ error: { message: error.message || "Internal server error" } }, { status: 500 });
+    console.error("[principal review] request failed", JSON.stringify({ principalUserId, error: error?.message ?? error }));
+    return NextResponse.json({ error: { message: error.message || "Internal server error" }, ...debugResponse() }, { status: 500 });
   }
 }

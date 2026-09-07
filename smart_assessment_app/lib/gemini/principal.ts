@@ -1,10 +1,37 @@
+export type PrincipalReviewDiagnostics = {
+  apiKeyConfigured: boolean;
+  providerUrl: string;
+  providerStatus: number | null;
+  providerError: {
+    message: string | null;
+    status: number | null;
+    body: string | null;
+  } | null;
+  parsedResponse: unknown;
+  result: string | null;
+};
+
 export async function generatePrincipalReview(input: {
   passed: number;
   failed: number;
   weakConcepts: string[];
-}): Promise<string | null> {
+}, onDiagnostics?: (diagnostics: PrincipalReviewDiagnostics) => void): Promise<string | null> {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
+  const providerUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent";
+  const diagnostics: PrincipalReviewDiagnostics = {
+    apiKeyConfigured: Boolean(apiKey),
+    providerUrl,
+    providerStatus: null,
+    providerError: null,
+    parsedResponse: null,
+    result: null,
+  };
+
+  if (!apiKey) {
+    diagnostics.providerError = { message: "Gemini API key is not configured.", status: null, body: null };
+    onDiagnostics?.(diagnostics);
+    return null;
+  }
 
   const prompt = [
     "You are an educational AI assistant writing a short performance summary for a school Principal.",
@@ -24,7 +51,7 @@ export async function generatePrincipalReview(input: {
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      `${providerUrl}?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -32,12 +59,41 @@ export async function generatePrincipalReview(input: {
       },
     );
 
-    if (!response.ok) return null;
+    diagnostics.providerStatus = response.status;
+    const responseBody = await response.text();
+    let data: any = null;
+    try {
+      data = responseBody ? JSON.parse(responseBody) : null;
+    } catch {
+      data = null;
+    }
+    diagnostics.parsedResponse = data;
 
-    const data = await response.json();
-    return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
-  } catch {
+    if (!response.ok) {
+      diagnostics.providerError = {
+        message: (data?.error?.message ?? response.statusText) || null,
+        status: response.status,
+        body: responseBody || null,
+      };
+      onDiagnostics?.(diagnostics);
+      return null;
+    }
+
+    const result = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
+    diagnostics.result = result;
+    if (!result) {
+      diagnostics.providerError = { message: "Gemini returned no review text.", status: response.status, body: responseBody || null };
+    }
+    onDiagnostics?.(diagnostics);
+    return result;
+  } catch (error) {
     // Gemini failure must never break the deterministic result
+    diagnostics.providerError = {
+      message: error instanceof Error ? error.message : "Gemini request failed.",
+      status: diagnostics.providerStatus,
+      body: null,
+    };
+    onDiagnostics?.(diagnostics);
     return null;
   }
 }

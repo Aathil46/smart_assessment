@@ -65,7 +65,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
 
   // Idempotently upsert concept performance
   if (evaluation.conceptPerformance.length > 0) {
-    await admin.from("concept_perf").upsert(
+    const { error: conceptPerfError } = await admin.from("concept_perf").upsert(
       evaluation.conceptPerformance.map((cp) => ({
         attempt_id: id,
         concept: cp.concept,
@@ -76,6 +76,20 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       })),
       { onConflict: "attempt_id,concept" },
     );
+
+    if (conceptPerfError) {
+      console.error("[attempt submit] concept_perf upsert failed", {
+        attemptId: id,
+        message: conceptPerfError.message,
+        code: conceptPerfError.code,
+        details: conceptPerfError.details,
+        hint: conceptPerfError.hint,
+      });
+      return NextResponse.json(
+        { error: { code: "INTERNAL_ERROR", message: "Unable to persist concept performance." } },
+        { status: 500 },
+      );
+    }
   }
 
   // Generate learning gaps ONLY for Weak concepts
