@@ -1,79 +1,43 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-
+import { ArrowRight, BarChart3, BrainCircuit, CheckCircle2, GraduationCap, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
-const ROLE_DASHBOARDS: Record<string, string> = {
-  teacher: "/teacher",
-  student: "/student",
-  principal: "/principal",
-};
+const ROLE_DASHBOARDS: Record<string, string> = { teacher: "/dashboard", student: "/student", principal: "/principal" };
+
+const workflow = [
+  ["01", "Upload material", "Bring a PDF into your class workspace."],
+  ["02", "Generate assessment", "AI drafts concept-tagged questions for review."],
+  ["03", "Measure understanding", "Students complete a focused assessment."],
+  ["04", "Find the gaps", "Concept-level results show where support matters."],
+];
 
 export default async function HomePage() {
-  // If the user already has a valid session, redirect them to their dashboard.
   try {
     const supabase = await createServerSupabaseClient();
     const { data: authData } = await supabase.auth.getUser();
     if (authData?.user) {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", authData.user.id)
-        .single();
+      const { data: profile } = await supabase.from("profiles").select("role").eq("id", authData.user.id).single();
       const dashboard = profile?.role ? ROLE_DASHBOARDS[profile.role] : null;
-      if (dashboard) {
-        redirect(dashboard);
-      }
+      if (dashboard) redirect(dashboard);
     }
-  } catch {
-    // Not authenticated or env vars missing — fall through to landing page.
-  }
+  } catch {}
 
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6 py-12">
-      <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-8 shadow-sm md:p-12">
-        <div className="mb-8 flex items-center justify-between gap-4 border-b border-slate-200 pb-6">
-          <div>
-            <p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-600">AI Smart Assessment</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-900">Teacher-ready assessment workflow</h1>
-          </div>
-          <div className="flex gap-3">
-            <Link
-              href="/login"
-              className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
-            >
-              Login
-            </Link>
-            <Link
-              href="/signup"
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
-            >
-              Sign up
-            </Link>
-          </div>
-        </div>
+  return <main className="min-h-screen overflow-hidden bg-white text-[var(--foreground)]">
+    <nav className="mx-auto flex max-w-[1240px] items-center justify-between px-5 py-5 sm:px-8 lg:px-10">
+      <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--primary)] text-white"><BrainCircuit size={20}/></div><div><p className="text-sm font-semibold">Smart Assessment</p><p className="text-[11px] text-[var(--muted)]">Learn what matters</p></div></div>
+      <div className="flex items-center gap-2"><Link href="/login" className="rounded-xl px-3 py-2 text-sm font-semibold text-[var(--muted)] hover:bg-slate-50">Log in</Link><Link href="/signup" className="rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[var(--primary-strong)]">Get started</Link></div>
+    </nav>
 
-        <div className="grid gap-8 md:grid-cols-2">
-          <section>
-            <h2 className="text-xl font-semibold text-slate-900">Project foundation</h2>
-            <p className="mt-3 text-base leading-7 text-slate-600">
-              This MVP includes the foundation for teacher authentication, class management, secure material upload,
-              PDF extraction, and Gemini-backed content processing with validation and safe server-side boundaries.
-            </p>
-          </section>
+    <section className="mx-auto grid max-w-[1240px] gap-14 px-5 pb-20 pt-12 sm:px-8 lg:grid-cols-[1.05fr_.95fr] lg:px-10 lg:pt-20">
+      <div className="sa-fade-up"><div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-1.5 text-xs font-semibold text-[var(--muted)]"><Sparkles size={13} className="text-[var(--ai)]"/> Assessment intelligence for real classrooms</div><h1 className="max-w-3xl text-4xl font-semibold leading-[1.06] tracking-[-.055em] sm:text-5xl lg:text-6xl">From learning material to <span className="text-[var(--primary)]">actionable understanding.</span></h1><p className="mt-6 max-w-2xl text-base leading-7 text-[var(--muted)] sm:text-lg">Create AI-assisted assessments from your teaching material, measure concept-level understanding, and turn learning gaps into the next best teaching or practice action.</p><div className="mt-8 flex flex-col gap-3 sm:flex-row"><Link href="/signup" className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-5 text-sm font-semibold text-white hover:bg-[var(--primary-strong)]">Start building assessments <ArrowRight size={16}/></Link><Link href="/login" className="inline-flex h-11 items-center justify-center rounded-xl border border-[var(--border)] bg-white px-5 text-sm font-semibold hover:bg-slate-50">See your workspace</Link></div><div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-xs text-[var(--muted)]"><span className="inline-flex items-center gap-2"><CheckCircle2 size={14} className="text-[var(--success)]"/>Deterministic scoring</span><span className="inline-flex items-center gap-2"><CheckCircle2 size={14} className="text-[var(--success)]"/>Concept-level analysis</span><span className="inline-flex items-center gap-2"><ShieldCheck size={14} className="text-[var(--success)]"/>Role-aware access</span></div></div>
+      <div className="sa-fade-up sa-delay-2"><div className="rounded-[28px] border border-[var(--border)] bg-[var(--panel-muted)] p-4 shadow-[0_20px_55px_rgba(16,35,63,.08)]"><div className="rounded-2xl border border-[var(--border)] bg-white p-5"><div className="flex items-center justify-between"><div><p className="text-xs font-semibold uppercase tracking-[.14em] text-[var(--primary)]">Teacher overview</p><h2 className="mt-1 text-lg font-semibold">Your classes, at a glance</h2></div><div className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]"><BarChart3 size={17}/></div></div><div className="mt-5 grid grid-cols-3 gap-3"><div className="rounded-xl bg-slate-50 p-3"><p className="text-[10px] text-[var(--muted)]">Students</p><p className="mt-1 text-xl font-semibold">126</p></div><div className="rounded-xl bg-slate-50 p-3"><p className="text-[10px] text-[var(--muted)]">Assessments</p><p className="mt-1 text-xl font-semibold">18</p></div><div className="rounded-xl bg-slate-50 p-3"><p className="text-[10px] text-[var(--muted)]">Avg. score</p><p className="mt-1 text-xl font-semibold">78%</p></div></div><div className="mt-4 rounded-xl border border-[var(--border)] p-4"><div className="flex items-center justify-between"><div><p className="text-sm font-semibold">Photosynthesis — Unit 3</p><p className="mt-1 text-xs text-[var(--muted)]">10A · 10 questions · Published</p></div><span className="rounded-full bg-[var(--success-soft)] px-2.5 py-1 text-[10px] font-semibold text-[var(--success)]">Live</span></div><div className="mt-4 h-2 rounded-full bg-slate-100"><div className="h-full w-[84%] rounded-full bg-[var(--primary)]"/></div><div className="mt-2 flex justify-between text-[10px] text-[var(--muted)]"><span>84% class average</span><span>31 submissions</span></div></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-[#ded5ff] bg-[var(--ai-soft)] p-4"><div className="flex items-center gap-2 text-[var(--ai)]"><Sparkles size={14}/><span className="text-xs font-semibold">AI teaching signal</span></div><p className="mt-2 text-xs leading-5 text-[var(--muted)]">Stomata is the most common weak concept across recent Biology work.</p></div><div className="rounded-xl bg-slate-50 p-4"><div className="flex items-center gap-2 text-[var(--primary)]"><GraduationCap size={14}/><span className="text-xs font-semibold">Student focus</span></div><p className="mt-2 text-xs leading-5 text-[var(--muted)]">12 learners would benefit from targeted practice.</p></div></div></div></div></div>
+    </section>
 
-          <section>
-            <h2 className="text-xl font-semibold text-slate-900">Current milestone</h2>
-            <ul className="mt-3 space-y-2 text-sm text-slate-600">
-              <li>• Next.js App Router + TypeScript foundation</li>
-              <li>• Supabase + RLS-ready schema and services</li>
-              <li>• Teacher auth pages and protected routing</li>
-              <li>• Class creation and material workflow setup</li>
-              <li>• PDF extraction and Gemini service boundaries</li>
-            </ul>
-          </section>
-        </div>
-      </div>
-    </main>
-  );
+    <section className="border-y border-[var(--border)] bg-[var(--panel-muted)]"><div className="mx-auto max-w-[1240px] px-5 py-16 sm:px-8 lg:px-10"><div className="max-w-2xl"><p className="text-[11px] font-semibold uppercase tracking-[.16em] text-[var(--primary)]">The assessment loop</p><h2 className="mt-3 text-3xl font-semibold tracking-[-.04em]">Every score should answer a better question.</h2><p className="mt-3 text-sm leading-6 text-[var(--muted)]">Smart Assessment connects creation, evaluation, concept analysis, and next actions into one clear workflow.</p></div><div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4">{workflow.map(([num,title,desc])=><div key={num} className="rounded-2xl border border-[var(--border)] bg-white p-5"><p className="text-xs font-semibold text-[var(--primary)]">{num}</p><h3 className="mt-8 text-base font-semibold">{title}</h3><p className="mt-2 text-sm leading-6 text-[var(--muted)]">{desc}</p></div>)}</div></div></section>
+
+    <section className="mx-auto grid max-w-[1240px] gap-5 px-5 py-16 sm:px-8 lg:grid-cols-3 lg:px-10"><div className="rounded-2xl border border-[var(--border)] p-6"><Users size={19} className="text-[var(--primary)]"/><h3 className="mt-5 font-semibold">Built for teachers</h3><p className="mt-2 text-sm leading-6 text-[var(--muted)]">Spend less time formatting quizzes and more time acting on evidence from your classes.</p></div><div className="rounded-2xl border border-[var(--border)] p-6"><GraduationCap size={19} className="text-[var(--primary)]"/><h3 className="mt-5 font-semibold">Focused for students</h3><p className="mt-2 text-sm leading-6 text-[var(--muted)]">Clear assessment taking, simple results, and targeted practice around the concepts that need work.</p></div><div className="rounded-2xl border border-[var(--border)] p-6"><BarChart3 size={19} className="text-[var(--primary)]"/><h3 className="mt-5 font-semibold">Useful at school level</h3><p className="mt-2 text-sm leading-6 text-[var(--muted)]">Give principals a read-only view of class, teacher, assessment, and concept performance.</p></div></section>
+
+    <footer className="border-t border-[var(--border)]"><div className="mx-auto flex max-w-[1240px] flex-col gap-3 px-5 py-7 text-xs text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between sm:px-8 lg:px-10"><span>Smart Assessment · AI-assisted assessment for better learning decisions</span><span>Teacher · Student · Principal</span></div></footer>
+  </main>;
 }
