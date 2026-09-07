@@ -45,13 +45,19 @@ button { cursor: pointer; }
 ::selection { background: #d9e3ff; color: #10233f; }
 
 @keyframes sa-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes sa-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes sa-pulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+@keyframes sa-shimmer { 0% { background-position: 150% 0; } 100% { background-position: -50% 0; } }
 .sa-fade-up { animation: sa-fade-up .45s ease-out both; }
+.sa-fade-in { animation: sa-fade-in .35s ease-out both; }
 .sa-delay-1 { animation-delay: .05s; }
 .sa-delay-2 { animation-delay: .1s; }
 .sa-delay-3 { animation-delay: .15s; }
 .sa-delay-4 { animation-delay: .2s; }
 .sa-pulse { animation: sa-pulse 1.8s ease-in-out infinite; }
+.sa-progress { transform-origin: left; animation: sa-progress-in .8s cubic-bezier(.22,1,.36,1) both; }
+@keyframes sa-progress-in { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.sa-skeleton { background: linear-gradient(110deg,#f1f4f8 30%,#f8fafc 45%,#f1f4f8 60%); background-size: 200% 100%; animation: sa-shimmer 1.4s linear infinite; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
