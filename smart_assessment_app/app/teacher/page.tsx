@@ -1,46 +1,38 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { BarChart3, BookOpen, FileText, Plus, Sparkles, Users } from "lucide-react";
 
 import { requireTeacherSession } from "@/lib/auth/teacher";
+import { AppShell, AiCallout, AssessmentRow, Button, Card, Metric, PageHeader, ProgressBar, Status } from "@/app/components/ui";
 
 export default async function TeacherDashboardPage() {
-  try {
-    await requireTeacherSession();
-  } catch {
-    redirect("/login");
-  }
+  try { await requireTeacherSession(); } catch { redirect("/login"); }
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
-      <header className="mb-8 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-wider text-blue-600">AI Smart Assessment</p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-900">Teacher Dashboard</h1>
-          <p className="mt-2 text-slate-600">Manage your classes, learning materials, and assessments.</p>
+    <AppShell role="teacher" active="Dashboard">
+      <PageHeader eyebrow="Teacher workspace" title="Good afternoon, Aathil" description="A focused view of what is happening across your classes and where students may need support." action={<Button href="/teacher/assessments/new" icon={<Plus size={16} />}>Create assessment</Button>} />
+      <div className="mx-auto max-w-[1240px] space-y-6 px-5 py-6 sm:px-8 lg:px-10 lg:py-8">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Metric label="Active classes" value="4" detail="126 enrolled students" icon={Users} trend="+1 this term" />
+          <Metric label="Assessments" value="18" detail="14 published · 4 drafts" icon={FileText} />
+          <Metric label="Average score" value="78%" detail="Across recent submissions" icon={BarChart3} trend="+6%" />
+          <Metric label="Students needing support" value="12" detail="Based on concept performance" icon={Sparkles} />
         </div>
-        <nav className="flex flex-wrap gap-2" aria-label="Teacher navigation">
-          <Link href="/teacher" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white">Dashboard</Link>
-          <Link href="/teacher/classes" className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Classes</Link>
-          <Link href="/teacher/assessments/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">Create Assessment</Link>
-        </nav>
-      </header>
-
-      <section className="grid gap-5 md:grid-cols-2">
-        <Link href="/teacher/classes" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-blue-300 hover:shadow-md">
-          <h2 className="text-xl font-semibold text-slate-900">My Classes</h2>
-          <p className="mt-2 text-sm text-slate-600">Create and manage classes, join codes, and learning materials.</p>
-          <span className="mt-5 inline-block text-sm font-medium text-blue-600">Open Classes →</span>
-        </Link>
-        <Link href="/teacher/assessments/new" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-blue-300 hover:shadow-md">
-          <h2 className="text-xl font-semibold text-slate-900">Create Assessment</h2>
-          <p className="mt-2 text-sm text-slate-600">Create an assessment and publish it for your students.</p>
-          <span className="mt-5 inline-block text-sm font-medium text-blue-600">Create Assessment →</span>
-        </Link>
-      </section>
-
-      <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50 p-5 text-sm text-blue-900">
-        <strong>Workflow:</strong> Create a class → add learning material → create/publish an assessment → open Results after students submit.
+        <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+          <Card className="overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-5"><div><h2 className="text-base font-semibold">Recent assessments</h2><p className="mt-1 text-xs text-[var(--muted)]">Track participation and class performance.</p></div><Link href="/teacher/assessments" className="text-xs font-semibold text-[var(--primary)]">View all</Link></div>
+            <AssessmentRow name="Photosynthesis — Unit 3" className="10A" status="Published" score="84%" due="31 submissions" />
+            <AssessmentRow name="Cell Structure Check" className="10B" status="Published" score="76%" due="28 submissions" />
+            <AssessmentRow name="Genetics Review" className="10A" status="In progress" score="—" due="12 started" />
+            <AssessmentRow name="Ecology Foundations" className="9C" status="Draft" />
+          </Card>
+          <div className="space-y-6">
+            <AiCallout title="AI teaching signal">Stomata is the most common weak concept across recent Biology work. Consider a short visual recap before the next assessment.</AiCallout>
+            <Card className="p-5"><div className="flex items-center gap-3"><div className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]"><BookOpen size={17}/></div><div><h2 className="text-sm font-semibold">Class health</h2><p className="text-xs text-[var(--muted)]">Concept mastery by class</p></div></div><div className="mt-5 space-y-5"><div><div className="mb-2 flex justify-between text-xs"><span className="font-medium">10A · Biology</span><span className="font-semibold">84%</span></div><ProgressBar value={84}/></div><div><div className="mb-2 flex justify-between text-xs"><span className="font-medium">10B · Biology</span><span className="font-semibold">76%</span></div><ProgressBar value={76}/></div><div><div className="mb-2 flex justify-between text-xs"><span className="font-medium">9C · Science</span><span className="font-semibold">71%</span></div><ProgressBar value={71}/></div></div></Card>
+          </div>
+        </div>
+        <Card className="p-5"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-2"><h2 className="text-base font-semibold">Needs attention</h2><Status tone="warning">12 students</Status></div><p className="mt-1 text-sm text-[var(--muted)]">Students with one or more concepts currently below the support threshold.</p></div><Button href="/teacher/assessments" variant="secondary">Review results</Button></div></Card>
       </div>
-    </main>
+    </AppShell>
   );
 }
