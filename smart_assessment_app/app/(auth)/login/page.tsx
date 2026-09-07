@@ -1,113 +1,11 @@
 "use client";
-
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ArrowRight, BrainCircuit, ShieldCheck, Sparkles } from "lucide-react";
 
 export default function LoginPage() {
-  const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setLoading(true);
-    setError("");
-
-    try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const payload = await response.json();
-
-      if (!response.ok) {
-        setError(payload?.error?.message ?? "Invalid email or password.");
-        return;
-      }
-
-      const role: string | null = payload?.role ?? null;
-
-      if (role === "teacher") {
-        router.push("/teacher");
-      } else if (role === "student") {
-        router.push("/student");
-      } else if (role === "principal") {
-        router.push("/principal");
-      } else {
-        // Profile missing or unknown role — redirect to a safe fallback.
-        setError("Your account does not have an assigned role. Please contact support.");
-      }
-    } catch {
-      setError("Unable to log in right now. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12">
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-        <div className="mb-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">AI Smart Assessment</p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-900">Log in</h1>
-        </div>
-
-        <form className="space-y-5" onSubmit={handleSubmit}>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="email">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              autoComplete="email"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="password">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              autoComplete="current-password"
-              required
-            />
-          </div>
-
-          {error ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
-          ) : null}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-blue-600 px-4 py-2.5 font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
-          >
-            {loading ? "Logging in..." : "Log in"}
-          </button>
-        </form>
-
-        <p className="mt-6 text-center text-sm text-slate-600">
-          Need an account?{" "}
-          <Link href="/signup" className="font-medium text-blue-600 hover:text-blue-700">
-            Sign up
-          </Link>
-        </p>
-      </div>
-    </main>
-  );
+  const router = useRouter(); const [email,setEmail]=useState(""); const [password,setPassword]=useState(""); const [loading,setLoading]=useState(false); const [error,setError]=useState("");
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) { event.preventDefault(); setLoading(true); setError(""); try { const response=await fetch("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})}); const payload=await response.json(); if(!response.ok){setError(payload?.error?.message??"Invalid email or password.");return;} const role=payload?.role; if(role==="teacher") router.push("/teacher"); else if(role==="student") router.push("/student"); else if(role==="principal") router.push("/principal"); else setError("Your account does not have an assigned role. Please contact support."); } catch { setError("Unable to log in right now. Please try again."); } finally {setLoading(false);} }
+  return <main className="grid min-h-screen lg:grid-cols-[.9fr_1.1fr]"><section className="hidden bg-[var(--foreground)] p-10 text-white lg:flex lg:flex-col lg:justify-between"><div><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--primary)]"><BrainCircuit size={20}/></div><div><p className="text-sm font-semibold">Smart Assessment</p><p className="text-[11px] text-slate-300">Learn what matters</p></div></div><div className="mt-24 max-w-lg"><p className="text-xs font-semibold uppercase tracking-[.16em] text-blue-300">Assessment intelligence</p><h1 className="mt-4 text-4xl font-semibold leading-tight tracking-[-.04em]">Turn assessment data into your next best learning action.</h1><p className="mt-5 text-base leading-7 text-slate-300">Create concept-aware assessments, understand learning gaps, and make better decisions for every classroom.</p></div></div><div className="flex gap-6 text-xs text-slate-300"><span className="inline-flex items-center gap-2"><ShieldCheck size={14}/>Role-aware access</span><span className="inline-flex items-center gap-2"><Sparkles size={14}/>AI-assisted insights</span></div></section><section className="flex items-center justify-center bg-[var(--background)] px-5 py-12 sm:px-8"><div className="w-full max-w-md"><div className="mb-8 lg:hidden"><div className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--primary)] text-white"><BrainCircuit size={20}/></div><p className="mt-3 text-sm font-semibold">Smart Assessment</p></div><div className="rounded-[24px] border border-[var(--border)] bg-white p-6 shadow-[0_18px_50px_rgba(16,35,63,.06)] sm:p-8"><p className="text-xs font-semibold uppercase tracking-[.15em] text-[var(--primary)]">Welcome back</p><h2 className="mt-2 text-2xl font-semibold tracking-[-.03em]">Log in to your workspace</h2><p className="mt-2 text-sm leading-6 text-[var(--muted)]">Continue managing assessments, learning gaps, and classroom progress.</p><form className="mt-7 space-y-5" onSubmit={handleSubmit}><div><label className="mb-2 block text-sm font-medium" htmlFor="email">Email</label><input id="email" type="email" value={email} onChange={e=>setEmail(e.target.value)} className="h-11 w-full rounded-xl border border-[var(--border)] bg-white px-3.5 text-sm outline-none transition focus:border-[var(--primary)] focus:ring-4 focus:ring-[var(--primary-soft)]" autoComplete="email" required/></div><div><label className="mb-2 block text-sm font-medium" htmlFor="password">Password</label><input id="password" type="password" value={password} onChange={e=>setPassword(e.target.value)} className="h-11 w-full rounded-xl border border-[var(--border)] bg-white px-3.5 text-sm outline-none transition focus:border-[var(--primary)] focus:ring-4 focus:ring-[var(--primary-soft)]" autoComplete="current-password" required/></div>{error&&<div role="alert" className="rounded-xl border border-[var(--error)]/20 bg-[var(--error-soft)] px-3 py-2.5 text-sm text-[var(--error)]">{error}</div>}<button disabled={loading} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--primary)] text-sm font-semibold text-white transition hover:bg-[var(--primary-strong)] disabled:cursor-not-allowed disabled:opacity-60">{loading?"Signing in…":<>Continue <ArrowRight size={16}/></>}</button></form><p className="mt-6 text-center text-sm text-[var(--muted)]">Need an account? <Link href="/signup" className="font-semibold text-[var(--primary)]">Create one</Link></p></div></div></section></main>;
 }

@@ -1,46 +1,109 @@
+"use client";
+
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowRight, FileText, Plus, Users } from "lucide-react";
 
-import { requireTeacherSession } from "@/lib/auth/teacher";
+import { AppShell, Button, Card, Metric, PageHeader, Status } from "@/app/components/ui";
 
-export default async function TeacherDashboardPage() {
-  try {
-    await requireTeacherSession();
-  } catch {
-    redirect("/login");
-  }
+type Assessment = {
+  id: string;
+  title: string;
+  topic?: string | null;
+  status?: string | null;
+};
+
+type ClassItem = {
+  id: string;
+  name: string;
+};
+
+export default function TeacherDashboardPage() {
+  const [assessments, setAssessments] = useState<Assessment[]>([]);
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([fetch("/api/assessments"), fetch("/api/classes")])
+      .then(async ([assessmentResponse, classResponse]) => {
+        if (!assessmentResponse.ok || !classResponse.ok) throw new Error("Unable to load dashboard data.");
+        const [assessmentData, classData] = await Promise.all([assessmentResponse.json(), classResponse.json()]);
+        if (active) {
+          setAssessments(assessmentData.assessments ?? []);
+          setClasses(classData.classes ?? []);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setAssessments([]);
+          setClasses([]);
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  const publishedCount = useMemo(() => assessments.filter((item) => item.status === "published").length, [assessments]);
+  const draftCount = useMemo(() => assessments.filter((item) => item.status === "draft").length, [assessments]);
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
-      <header className="mb-8 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-wider text-blue-600">AI Smart Assessment</p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-900">Teacher Dashboard</h1>
-          <p className="mt-2 text-slate-600">Manage your classes, learning materials, and assessments.</p>
+    <AppShell role="teacher" active="Dashboard">
+      <PageHeader
+        eyebrow="Teacher workspace"
+        title="Your teaching workspace"
+        description="A focused view of your real classes and assessments."
+        action={<Button href="/teacher/assessments/new" icon={<Plus size={16} />}>Create assessment</Button>}
+      />
+      <div className="mx-auto max-w-[1240px] space-y-6 px-5 py-6 sm:px-8 lg:px-10 lg:py-8">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Metric label="Classes" value={loading ? "—" : classes.length} detail="Classes linked to your account" icon={Users} />
+          <Metric label="Assessments" value={loading ? "—" : assessments.length} detail={loading ? "Loading your records" : `${publishedCount} published · ${draftCount} drafts`} icon={FileText} />
+          <Metric label="Available data" value={loading ? "—" : assessments.length + classes.length} detail="Real records currently loaded" />
         </div>
-        <nav className="flex flex-wrap gap-2" aria-label="Teacher navigation">
-          <Link href="/teacher" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white">Dashboard</Link>
-          <Link href="/teacher/classes" className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Classes</Link>
-          <Link href="/teacher/assessments/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">Create Assessment</Link>
-        </nav>
-      </header>
 
-      <section className="grid gap-5 md:grid-cols-2">
-        <Link href="/teacher/classes" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-blue-300 hover:shadow-md">
-          <h2 className="text-xl font-semibold text-slate-900">My Classes</h2>
-          <p className="mt-2 text-sm text-slate-600">Create and manage classes, join codes, and learning materials.</p>
-          <span className="mt-5 inline-block text-sm font-medium text-blue-600">Open Classes →</span>
-        </Link>
-        <Link href="/teacher/assessments/new" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-blue-300 hover:shadow-md">
-          <h2 className="text-xl font-semibold text-slate-900">Create Assessment</h2>
-          <p className="mt-2 text-sm text-slate-600">Create an assessment and publish it for your students.</p>
-          <span className="mt-5 inline-block text-sm font-medium text-blue-600">Create Assessment →</span>
-        </Link>
-      </section>
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-5">
+            <div>
+              <h2 className="text-base font-semibold">Your assessments</h2>
+              <p className="mt-1 text-xs text-[var(--muted)]">Only assessments returned by your account are shown.</p>
+            </div>
+            <Link href="/teacher/assessments" className="text-xs font-semibold text-[var(--primary)]">View all</Link>
+          </div>
+          {loading ? (
+            <div className="space-y-3 border-t border-[var(--border)] p-5">
+              {[1, 2, 3].map((item) => <div key={item} className="sa-skeleton h-16 rounded-xl" />)}
+            </div>
+          ) : assessments.length === 0 ? (
+            <div className="border-t border-[var(--border)] p-10 text-center">
+              <p className="font-semibold text-[var(--foreground)]">No assessments yet</p>
+              <p className="mt-1 text-sm text-[var(--muted)]">Create an assessment to see it appear here.</p>
+              <Button className="mt-5" href="/teacher/assessments/new">Create assessment</Button>
+            </div>
+          ) : (
+            <div className="divide-y divide-[var(--border)]">
+              {assessments.slice(0, 6).map((item) => (
+                <Link key={item.id} href={`/teacher/assessments/${item.id}/edit`} className="group flex items-center gap-4 px-5 py-4 transition hover:bg-[var(--panel-muted)]">
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]"><FileText size={17} /></div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{item.title}</p>
+                    <p className="mt-1 truncate text-xs text-[var(--muted)]">{item.topic || "Assessment"}</p>
+                  </div>
+                  <Status tone={item.status === "published" ? "success" : "neutral"}>{item.status || "Unknown"}</Status>
+                  <ArrowRight size={16} className="text-[var(--muted)] transition group-hover:translate-x-1 group-hover:text-[var(--primary)]" />
+                </Link>
+              ))}
+            </div>
+          )}
+        </Card>
 
-      <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50 p-5 text-sm text-blue-900">
-        <strong>Workflow:</strong> Create a class → add learning material → create/publish an assessment → open Results after students submit.
+        <Card className="p-5">
+          <h2 className="text-sm font-semibold">Dashboard data policy</h2>
+          <p className="mt-1 text-sm leading-6 text-[var(--muted)]">This dashboard does not invent scores, student counts, learning gaps, or AI insights. Analytics are shown only where the existing backend provides real records.</p>
+        </Card>
       </div>
-    </main>
+    </AppShell>
   );
 }
