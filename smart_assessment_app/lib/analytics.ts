@@ -67,6 +67,22 @@ export type ClassPerformanceResult = {
   studentResults: StudentResult[];
 };
 
+function selectLatestAttempt(current: AttemptData | undefined, candidate: AttemptData): AttemptData {
+  if (!current) return candidate;
+
+  const currentIsSubmitted = current.submitted_at !== null;
+  const candidateIsSubmitted = candidate.submitted_at !== null;
+
+  if (candidateIsSubmitted !== currentIsSubmitted) {
+    return candidateIsSubmitted ? candidate : current;
+  }
+
+  const currentTimestamp = current.submitted_at ?? current.started_at;
+  const candidateTimestamp = candidate.submitted_at ?? candidate.started_at;
+
+  return candidateTimestamp > currentTimestamp ? candidate : current;
+}
+
 export function aggregateClassPerformance(
   members: ClassMemberData[],
   profiles: ProfileData[],
@@ -74,7 +90,10 @@ export function aggregateClassPerformance(
   conceptPerfs: ConceptPerfData[]
 ): ClassPerformanceResult {
   const profileMap = new Map(profiles.map((p) => [p.id, p.name]));
-  const attemptByStudent = new Map(attempts.map((a) => [a.student_id, a]));
+  const attemptByStudent = new Map<string, AttemptData>();
+  for (const attempt of attempts) {
+    attemptByStudent.set(attempt.student_id, selectLatestAttempt(attemptByStudent.get(attempt.student_id), attempt));
+  }
   const perfByAttempt = new Map<string, ConceptPerfData[]>();
 
   for (const cp of conceptPerfs) {

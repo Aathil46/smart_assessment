@@ -2,6 +2,66 @@ import { describe, expect, it } from "vitest";
 import { aggregateClassPerformance } from "@/lib/analytics";
 
 describe("Phase 6 — Analytics Service (aggregateClassPerformance)", () => {
+  const members = [{ student_id: "s1" }];
+  const profiles = [{ id: "s1", name: "Student One" }];
+
+  it("selects a submitted attempt", () => {
+    const result = aggregateClassPerformance(
+      members,
+      profiles,
+      [{ id: "submitted", student_id: "s1", score: 8, total: 10, started_at: "2024-01-01T10:00:00Z", submitted_at: "2024-01-01T10:30:00Z" }],
+      []
+    );
+
+    expect(result.studentResults[0]).toMatchObject({ attempt_id: "submitted", status: "Completed", percentage: 80 });
+  });
+
+  it("selects an in-progress attempt when there is no submitted attempt", () => {
+    const result = aggregateClassPerformance(
+      members,
+      profiles,
+      [{ id: "in-progress", student_id: "s1", score: null, total: null, started_at: "2024-01-01T10:00:00Z", submitted_at: null }],
+      []
+    );
+
+    expect(result.studentResults[0]).toMatchObject({ attempt_id: "in-progress", status: "In Progress" });
+  });
+
+  it.each([
+    [
+      "submitted then in-progress",
+      [
+        { id: "submitted", student_id: "s1", score: 8, total: 10, started_at: "2024-01-01T10:00:00Z", submitted_at: "2024-01-01T10:30:00Z" },
+        { id: "in-progress", student_id: "s1", score: null, total: null, started_at: "2024-01-02T10:00:00Z", submitted_at: null },
+      ],
+    ],
+    [
+      "in-progress then submitted",
+      [
+        { id: "in-progress", student_id: "s1", score: null, total: null, started_at: "2024-01-02T10:00:00Z", submitted_at: null },
+        { id: "submitted", student_id: "s1", score: 8, total: 10, started_at: "2024-01-01T10:00:00Z", submitted_at: "2024-01-01T10:30:00Z" },
+      ],
+    ],
+  ])("prefers the submitted attempt for duplicate attempts (%s)", (_, attempts) => {
+    const result = aggregateClassPerformance(members, profiles, attempts, []);
+
+    expect(result.studentResults[0]).toMatchObject({ attempt_id: "submitted", status: "Completed" });
+  });
+
+  it("selects the latest submitted attempt when there are multiple submitted attempts", () => {
+    const result = aggregateClassPerformance(
+      members,
+      profiles,
+      [
+        { id: "latest-submitted", student_id: "s1", score: 9, total: 10, started_at: "2024-01-02T10:00:00Z", submitted_at: "2024-01-02T10:30:00Z" },
+        { id: "older-submitted", student_id: "s1", score: 5, total: 10, started_at: "2024-01-01T10:00:00Z", submitted_at: "2024-01-01T10:30:00Z" },
+      ],
+      []
+    );
+
+    expect(result.studentResults[0]).toMatchObject({ attempt_id: "latest-submitted", score: 9, percentage: 90 });
+  });
+
   it("computes overview stats correctly based on enrolled students", () => {
     const members = [
       { student_id: "s1" },
