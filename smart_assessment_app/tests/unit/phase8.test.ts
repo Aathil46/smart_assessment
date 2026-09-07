@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { aggregateClassPerformance } from "@/lib/analytics";
 
 describe("Phase 8 - Principal Role & Analytics", () => {
   it("verifies principal session requires principal role", () => {
@@ -38,5 +39,38 @@ describe("Phase 8 - Principal Role & Analytics", () => {
     // There should be no PII or student names in the payload
     expect(Object.keys(data)).toEqual(["passed", "failed", "weakConcepts"]);
     expect(data.weakConcepts.length).toBe(2);
+  });
+
+  it("reports a submitted Principal result when an older incomplete attempt also exists", () => {
+    const result = aggregateClassPerformance(
+      [{ student_id: "student-aathil" }],
+      [{ id: "student-aathil", name: "Aathil" }],
+      [
+        {
+          id: "attempt-incomplete",
+          student_id: "student-aathil",
+          score: null,
+          total: null,
+          started_at: "2026-09-07T05:19:55.57327Z",
+          submitted_at: null,
+        },
+        {
+          id: "attempt-submitted",
+          student_id: "student-aathil",
+          score: 4,
+          total: 10,
+          started_at: "2026-09-07T05:19:55.753114Z",
+          submitted_at: "2026-09-07T05:20:58.416Z",
+        },
+      ],
+      []
+    );
+
+    expect(result.overview).toMatchObject({
+      totalStudents: 1,
+      completed: 1,
+      passed: 0,
+      failed: 1,
+    });
   });
 });
