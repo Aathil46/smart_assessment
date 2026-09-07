@@ -1,33 +1,37 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --muted: #64748b;
-  --border: #e2e8f0;
+  --background: #f5f7fb;
+  --foreground: #10233f;
+  --muted: #61708a;
+  --muted-foreground: #7f8ba0;
+  --border: #dfe6ef;
   --panel: #ffffff;
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
-  --success: #16a34a;
-  --warning: #d97706;
-  --error: #dc2626;
+  --panel-muted: #f8fafc;
+  --primary: #2457d6;
+  --primary-strong: #1846ba;
+  --primary-soft: #eaf0ff;
+  --success: #1d9a67;
+  --success-soft: #e7f7f0;
+  --warning: #c8841b;
+  --warning-soft: #fff5df;
+  --error: #d25454;
+  --error-soft: #fdecec;
+  --ai: #7358d6;
+  --ai-soft: #f0ecff;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-panel: var(--panel);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html {
-  background: var(--background);
-}
-
+* { box-sizing: border-box; }
+html { background: var(--background); scroll-behavior: smooth; }
 body {
   min-height: 100vh;
   margin: 0;
@@ -35,15 +39,21 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, sans-serif;
 }
+a { color: inherit; text-decoration: none; }
+button,input,select,textarea { font: inherit; }
+button { cursor: pointer; }
+::selection { background: #d9e3ff; color: #10233f; }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
+@keyframes sa-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes sa-pulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+.sa-fade-up { animation: sa-fade-up .45s ease-out both; }
+.sa-delay-1 { animation-delay: .05s; }
+.sa-delay-2 { animation-delay: .1s; }
+.sa-delay-3 { animation-delay: .15s; }
+.sa-delay-4 { animation-delay: .2s; }
+.sa-pulse { animation: sa-pulse 1.8s ease-in-out infinite; }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
 }
