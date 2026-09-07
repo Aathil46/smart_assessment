@@ -1,37 +1,108 @@
+"use client";
+
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { BarChart3, BookOpen, FileText, Plus, Sparkles, Users } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowRight, FileText, Plus, Users } from "lucide-react";
 
-import { requireTeacherSession } from "@/lib/auth/teacher";
-import { AppShell, AiCallout, AssessmentRow, Button, Card, Metric, PageHeader, ProgressBar, Status } from "@/app/components/ui";
+import { AppShell, Button, Card, Metric, PageHeader, Status } from "@/app/components/ui";
 
-export default async function TeacherDashboardPage() {
-  try { await requireTeacherSession(); } catch { redirect("/login"); }
+type Assessment = {
+  id: string;
+  title: string;
+  topic?: string | null;
+  status?: string | null;
+};
+
+type ClassItem = {
+  id: string;
+  name: string;
+};
+
+export default function TeacherDashboardPage() {
+  const [assessments, setAssessments] = useState<Assessment[]>([]);
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([fetch("/api/assessments"), fetch("/api/classes")])
+      .then(async ([assessmentResponse, classResponse]) => {
+        if (!assessmentResponse.ok || !classResponse.ok) throw new Error("Unable to load dashboard data.");
+        const [assessmentData, classData] = await Promise.all([assessmentResponse.json(), classResponse.json()]);
+        if (active) {
+          setAssessments(assessmentData.assessments ?? []);
+          setClasses(classData.classes ?? []);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setAssessments([]);
+          setClasses([]);
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  const publishedCount = useMemo(() => assessments.filter((item) => item.status === "published").length, [assessments]);
+  const draftCount = useMemo(() => assessments.filter((item) => item.status === "draft").length, [assessments]);
 
   return (
     <AppShell role="teacher" active="Dashboard">
-      <PageHeader eyebrow="Teacher workspace" title="Good afternoon, Aathil" description="A focused view of what is happening across your classes and where students may need support." action={<Button href="/teacher/assessments/new" icon={<Plus size={16} />}>Create assessment</Button>} />
+      <PageHeader
+        eyebrow="Teacher workspace"
+        title="Your teaching workspace"
+        description="A focused view of your real classes and assessments."
+        action={<Button href="/teacher/assessments/new" icon={<Plus size={16} />}>Create assessment</Button>}
+      />
       <div className="mx-auto max-w-[1240px] space-y-6 px-5 py-6 sm:px-8 lg:px-10 lg:py-8">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Metric label="Active classes" value="4" detail="126 enrolled students" icon={Users} trend="+1 this term" />
-          <Metric label="Assessments" value="18" detail="14 published · 4 drafts" icon={FileText} />
-          <Metric label="Average score" value="78%" detail="Across recent submissions" icon={BarChart3} trend="+6%" />
-          <Metric label="Students needing support" value="12" detail="Based on concept performance" icon={Sparkles} />
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Metric label="Classes" value={loading ? "—" : classes.length} detail="Classes linked to your account" icon={Users} />
+          <Metric label="Assessments" value={loading ? "—" : assessments.length} detail={loading ? "Loading your records" : `${publishedCount} published · ${draftCount} drafts`} icon={FileText} />
+          <Metric label="Available data" value={loading ? "—" : assessments.length + classes.length} detail="Real records currently loaded" />
         </div>
-        <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-          <Card className="overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-5"><div><h2 className="text-base font-semibold">Recent assessments</h2><p className="mt-1 text-xs text-[var(--muted)]">Track participation and class performance.</p></div><Link href="/teacher/assessments" className="text-xs font-semibold text-[var(--primary)]">View all</Link></div>
-            <AssessmentRow name="Photosynthesis — Unit 3" className="10A" status="Published" score="84%" due="31 submissions" />
-            <AssessmentRow name="Cell Structure Check" className="10B" status="Published" score="76%" due="28 submissions" />
-            <AssessmentRow name="Genetics Review" className="10A" status="In progress" score="—" due="12 started" />
-            <AssessmentRow name="Ecology Foundations" className="9C" status="Draft" />
-          </Card>
-          <div className="space-y-6">
-            <AiCallout title="AI teaching signal">Stomata is the most common weak concept across recent Biology work. Consider a short visual recap before the next assessment.</AiCallout>
-            <Card className="p-5"><div className="flex items-center gap-3"><div className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]"><BookOpen size={17}/></div><div><h2 className="text-sm font-semibold">Class health</h2><p className="text-xs text-[var(--muted)]">Concept mastery by class</p></div></div><div className="mt-5 space-y-5"><div><div className="mb-2 flex justify-between text-xs"><span className="font-medium">10A · Biology</span><span className="font-semibold">84%</span></div><ProgressBar value={84}/></div><div><div className="mb-2 flex justify-between text-xs"><span className="font-medium">10B · Biology</span><span className="font-semibold">76%</span></div><ProgressBar value={76}/></div><div><div className="mb-2 flex justify-between text-xs"><span className="font-medium">9C · Science</span><span className="font-semibold">71%</span></div><ProgressBar value={71}/></div></div></Card>
+
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-5">
+            <div>
+              <h2 className="text-base font-semibold">Your assessments</h2>
+              <p className="mt-1 text-xs text-[var(--muted)]">Only assessments returned by your account are shown.</p>
+            </div>
+            <Link href="/teacher/assessments" className="text-xs font-semibold text-[var(--primary)]">View all</Link>
           </div>
-        </div>
-        <Card className="p-5"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-2"><h2 className="text-base font-semibold">Needs attention</h2><Status tone="warning">12 students</Status></div><p className="mt-1 text-sm text-[var(--muted)]">Students with one or more concepts currently below the support threshold.</p></div><Button href="/teacher/assessments" variant="secondary">Review results</Button></div></Card>
+          {loading ? (
+            <div className="space-y-3 border-t border-[var(--border)] p-5">
+              {[1, 2, 3].map((item) => <div key={item} className="sa-skeleton h-16 rounded-xl" />)}
+            </div>
+          ) : assessments.length === 0 ? (
+            <div className="border-t border-[var(--border)] p-10 text-center">
+              <p className="font-semibold text-[var(--foreground)]">No assessments yet</p>
+              <p className="mt-1 text-sm text-[var(--muted)]">Create an assessment to see it appear here.</p>
+              <Button className="mt-5" href="/teacher/assessments/new">Create assessment</Button>
+            </div>
+          ) : (
+            <div className="divide-y divide-[var(--border)]">
+              {assessments.slice(0, 6).map((item) => (
+                <Link key={item.id} href={`/teacher/assessments/${item.id}/edit`} className="group flex items-center gap-4 px-5 py-4 transition hover:bg-[var(--panel-muted)]">
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]"><FileText size={17} /></div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{item.title}</p>
+                    <p className="mt-1 truncate text-xs text-[var(--muted)]">{item.topic || "Assessment"}</p>
+                  </div>
+                  <Status tone={item.status === "published" ? "success" : "neutral"}>{item.status || "Unknown"}</Status>
+                  <ArrowRight size={16} className="text-[var(--muted)] transition group-hover:translate-x-1 group-hover:text-[var(--primary)]" />
+                </Link>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-5">
+          <h2 className="text-sm font-semibold">Dashboard data policy</h2>
+          <p className="mt-1 text-sm leading-6 text-[var(--muted)]">This dashboard does not invent scores, student counts, learning gaps, or AI insights. Analytics are shown only where the existing backend provides real records.</p>
+        </Card>
       </div>
     </AppShell>
   );
