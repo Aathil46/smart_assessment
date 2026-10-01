@@ -26,7 +26,21 @@ export async function POST(request: Request) {
     const { data: klass } = await admin.from("classes").select("id").eq("id", payload.classId).eq("teacher_id", user.id).single();
     const { data: material } = await admin.from("materials").select("id,status").eq("id", payload.materialId).eq("class_id", payload.classId).single();
     if (!klass || material?.status !== "processed") return NextResponse.json({ error: { code: "INVALID_MATERIAL", message: "Choose a processed material from your class." } }, { status: 400 });
-    const { data, error } = await admin.from("assessments").insert({ id: randomUUID(), class_id: payload.classId, material_id: payload.materialId, title: payload.title, topic: payload.topic, num_questions: payload.numQuestions, difficulty: payload.difficulty, created_by: user.id, status: "draft" }).select("id,status").single();
+    const { data, error } = await admin
+      .from("assessments")
+      .insert({
+        id: randomUUID(),
+        class_id: payload.classId,
+        material_id: payload.materialId,
+        title: payload.title,
+        topic: payload.topic || payload.title,
+        num_questions: payload.numQuestions,
+        difficulty: payload.difficulty,
+        created_by: user.id,
+        status: "draft",
+      })
+      .select("id,status")
+      .single();
     if (error) throw new Error(error.message);
     return NextResponse.json(data, { status: 201 });
   } catch (error) {
@@ -42,12 +56,120 @@ export async function GET() {
   const admin = createAdminSupabaseClient();
   const { data: profile } = await admin.from("profiles").select("role").eq("id", auth.user.id).single();
   if (profile?.role === "teacher") {
-    const { data } = await admin.from("assessments").select("*").eq("created_by", auth.user.id).order("created_at", { ascending: false });
+    const { data } = await admin
+      .from("assessments")
+      .select("*, classes(id, name, subject), questions(id)")
+      .eq("created_by", auth.user.id)
+      .order("created_at", { ascending: false });
     return NextResponse.json({ assessments: data ?? [] });
   }
   const { data: memberships } = await admin.from("class_members").select("class_id").eq("student_id", auth.user.id);
   const classIds = (memberships ?? []).map((item) => item.class_id);
-  const { data } = classIds.length ? await admin.from("assessments").select("id,class_id,title,topic,status,opens_at,closes_at,attempt_limit").eq("status", "published").in("class_id", classIds) : { data: [] };
+  if (!classIds.length) {
+    return NextResponse.json({ assessments: [], toDo: [], completed: [] });
+  }
+
+  const { data: rawAssessments } = await admin
+    .from("assessments")
+    .select("id,class_id,title,topic,difficulty,status,opens_at,closes_at,attempt_limit,created_at,classes(id,name,subject,teacher_id),questions(id)")
+    .eq("status", "published")
+    .in("class_id", classIds)
+    .order("created_at", { ascending: false });
+
+  const teacherIds = [...new Set((rawAssessments ?? []).map((a: any) => {
+    const c = Array.isArray(a.classes) ? a.classes[0] : a.classes;
+    return c?.teacher_id;
+  }).filter(Boolean))];
+  const { data: teachers } = teacherIds.length > 0
+    ? await admin.from("profiles").select("id,name").in("id", teacherIds)
+    : { data: [] };
+  const teacherMap = new Map((teachers ?? []).map((t: any) => [t.id, t.name]));
+
+  const assessmentIds = (rawAssessments ?? []).map((a: any) => a.id);
+  const { data: rawAttempts } = assessmentIds.length > 0
+    ? await admin
+        .from("attempts")
+        .select("id,assessment_id,score,total,started_at,submitted_at,created_at")
+        .eq("student_id", auth.user.id)
+        .in("assessment_id", assessmentIds)
+        .order("submitted_at", { ascending: false })
+    : { data: [] };
+
+  const attemptsByAssessment = new Map<string, any[]>();
+  for (const att of (rawAttempts ?? [])) {
+    const list = attemptsByAssessment.get(att.assessment_id) ?? [];
+    list.push(att);
+    attemptsByAssessment.set(att.assessment_id, list);
+  }
+
   const now = Date.now();
-  return NextResponse.json({ assessments: (data ?? []).filter((item) => (!item.opens_at || new Date(item.opens_at).getTime() <= now) && (!item.closes_at || new Date(item.closes_at).getTime() > now)) });
+  const toDo: any[] = [];
+  const completed: any[] = [];
+  const allStudentAssessments: any[] = [];
+
+  for (const a of (rawAssessments ?? [])) {
+    const classObj = (Array.isArray(a.classes) ? a.classes[0] : a.classes) as { id?: string; name?: string; subject?: string | null; teacher_id?: string } | null;
+    const atts = attemptsByAssessment.get(a.id) ?? [];
+    const submittedAttempt = atts.find((att: any) => att.submitted_at !== null);
+    const inProgressAttempt = atts.find((att: any) => att.submitted_at === null);
+    const teacherName = (classObj?.teacher_id ? teacherMap.get(classObj.teacher_id) : null) || "Teacher";
+    const questionCount = a.questions?.length || 0;
+    const duration = Math.max(5, (questionCount || 10) * 3);
+
+    if (submittedAttempt) {
+      const scorePct = submittedAttempt.total && submittedAttempt.total > 0
+        ? Math.round((submittedAttempt.score / submittedAttempt.total) * 100)
+        : (submittedAttempt.score ?? 0);
+      const passed = scorePct >= 60;
+      const completedItem = {
+        id: a.id,
+        attemptId: submittedAttempt.id,
+        title: a.title,
+        topic: a.topic,
+        classId: a.class_id,
+        className: classObj?.name ?? "Class",
+        subject: classObj?.subject,
+        teacher: teacherName,
+        questions: questionCount,
+        duration,
+        score: scorePct,
+        passed,
+        submittedAt: submittedAttempt.submitted_at,
+        completedDate: submittedAttempt.submitted_at
+          ? new Date(submittedAttempt.submitted_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+          : "—",
+        status: "completed",
+      };
+      completed.push(completedItem);
+      allStudentAssessments.push(completedItem);
+    } else {
+      const isOpen = !a.opens_at || new Date(a.opens_at).getTime() <= now;
+      const isNotClosed = !a.closes_at || new Date(a.closes_at).getTime() > now;
+
+      if (isOpen && isNotClosed) {
+        const toDoItem = {
+          id: a.id,
+          attemptId: inProgressAttempt?.id ?? null,
+          title: a.title,
+          topic: a.topic,
+          classId: a.class_id,
+          className: classObj?.name ?? "Class",
+          subject: classObj?.subject,
+          teacher: teacherName,
+          questions: questionCount,
+          duration,
+          status: inProgressAttempt ? "in-progress" : "not-started",
+          dueDate: a.closes_at
+            ? new Date(a.closes_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+            : "No deadline",
+          opensAt: a.opens_at,
+          closesAt: a.closes_at,
+        };
+        toDo.push(toDoItem);
+        allStudentAssessments.push(toDoItem);
+      }
+    }
+  }
+
+  return NextResponse.json({ assessments: allStudentAssessments, toDo, completed });
 }

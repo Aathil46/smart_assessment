@@ -8,7 +8,7 @@ const signupSchema = z.object({
   name: z.string().trim().min(2),
   email: z.string().email(),
   password: z.string().min(8),
-  role: z.enum(["teacher", "student"]),
+  role: z.literal("student"),
 });
 
 export async function POST(request: Request) {

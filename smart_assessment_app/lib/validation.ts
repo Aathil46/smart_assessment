@@ -44,9 +44,9 @@ export const assessmentSchema = z.object({
   classId: z.string().uuid(),
   materialId: z.string().uuid(),
   title: z.string().trim().min(1, "Title is required."),
-  topic: z.string().trim().min(1, "Topic is required."),
-  numQuestions: z.coerce.number().int().min(3).max(20),
-  difficulty: difficultySchema,
+  topic: z.string().trim().optional(),
+  numQuestions: z.coerce.number().int().min(3).max(20).default(10),
+  difficulty: difficultySchema.default("medium"),
 });
 
 export const questionSchema = z.object({

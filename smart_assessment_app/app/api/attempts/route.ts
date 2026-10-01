@@ -23,7 +23,16 @@ export async function POST(request: Request) {
 
 async function attemptResponse(admin: ReturnType<typeof createAdminSupabaseClient>, attemptId: string) {
   const { data: attempt } = await admin.from("attempts").select("id,assessment_id,started_at").eq("id", attemptId).single();
+  const { data: assessmentRow } = await admin.from("assessments").select("id,title,topic,class_id,opens_at,closes_at,classes(id,name)").eq("id", attempt?.assessment_id).single();
+  const classObj = assessmentRow ? (Array.isArray((assessmentRow as any).classes) ? (assessmentRow as any).classes[0] : (assessmentRow as any).classes) : null;
   const { data: questions } = await admin.from("questions").select("id,text,choices,concept,difficulty").eq("assessment_id", attempt?.assessment_id).order("created_at");
   const { data: answers } = await admin.from("answers").select("question_id,selected_choice").eq("attempt_id", attemptId);
-  return NextResponse.json({ attempt, questions: questions ?? [], answers: answers ?? [] });
+  const assessment = assessmentRow ? {
+    id: assessmentRow.id,
+    title: assessmentRow.title,
+    topic: assessmentRow.topic,
+    className: classObj?.name ?? "Class",
+    closes_at: assessmentRow.closes_at,
+  } : null;
+  return NextResponse.json({ attempt, assessment, questions: questions ?? [], answers: answers ?? [] });
 }

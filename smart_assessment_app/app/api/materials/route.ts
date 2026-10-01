@@ -11,10 +11,17 @@ export async function GET(request: Request) {
   const supabase = await createServerSupabaseClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Please log in." } }, { status: 401 });
-  if (!classId) return NextResponse.json({ error: { code: "VALIDATION_ERROR", message: "Class is required." } }, { status: 400 });
-  const { data: ownedClass } = await supabase.from("classes").select("id").eq("id", classId).eq("teacher_id", userData.user.id).single();
-  if (!ownedClass) return NextResponse.json({ error: { code: "FORBIDDEN", message: "Access denied." } }, { status: 403 });
-  const { data, error } = await supabase.from("materials").select("id,title,status").eq("class_id", classId).eq("status", "processed").order("created_at", { ascending: false });
+  let classQuery = supabase.from("classes").select("id").eq("teacher_id", userData.user.id);
+  if (classId) classQuery = classQuery.eq("id", classId);
+  const { data: ownedClasses, error: classError } = await classQuery;
+  if (classError) return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Unable to load classes." } }, { status: 500 });
+  const ownedClassIds = (ownedClasses ?? []).map((item) => item.id);
+  if (ownedClassIds.length === 0) return NextResponse.json({ materials: [] });
+  const { data, error } = await supabase
+    .from("materials")
+    .select("id,class_id,title,file_name,mime_type,size_bytes,status,created_at,page_count,metadata")
+    .in("class_id", ownedClassIds)
+    .order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Unable to load materials." } }, { status: 500 });
   return NextResponse.json({ materials: data ?? [] });
 }
@@ -89,9 +96,8 @@ export async function POST(request: Request) {
       throw new Error(insertError?.message ?? "Material metadata could not be saved.");
     }
 
+    const tempPath = `${process.cwd()}/tmp-${randomUUID()}.pdf`;
     try {
-      const tempDir = process.cwd();
-      const tempPath = `${tempDir}/tmp-${randomUUID()}.pdf`;
       await import("fs/promises").then((fs) => fs.writeFile(tempPath, buffer));
       const extraction = extractPdfText(tempPath);
       const text = extraction.chunks.map((chunk) => chunk.text).join("\n\n").trim();
@@ -120,25 +126,31 @@ export async function POST(request: Request) {
         throw new Error(updateError.message);
       }
 
-      await import("fs/promises").then((fs) => fs.unlink(tempPath).catch(() => undefined));
-
       return NextResponse.json({
         id: materialRecord.id,
         title: materialRecord.title,
         status: summary ? "processed" : "failed",
         pageCount: extraction.pageCount,
       }, { status: 201 });
-    } catch (extractError) {
+    } catch (processingError) {
+      const message = processingError instanceof Error ? processingError.message : "Material processing failed.";
+      console.error("Material processing failed", {
+        materialId: materialRecord.id,
+        classId,
+        message,
+      });
       await supabase
         .from("materials")
         .update({
           status: "failed",
-          error_message: "PDF extraction failed.",
+          error_message: message,
           processed_at: new Date().toISOString(),
         })
         .eq("id", materialRecord.id);
 
-      throw extractError;
+      throw processingError;
+    } finally {
+      await import("fs/promises").then((fs) => fs.unlink(tempPath).catch(() => undefined));
     }
   } catch (error) {
     return NextResponse.json(toErrorResponse(error), { status: 500 });
