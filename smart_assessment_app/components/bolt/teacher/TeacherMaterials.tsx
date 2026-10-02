@@ -22,6 +22,7 @@ type MaterialItem = {
   uploadedAt: string;
   timeAgo: string;
   pageCount?: number;
+  errorMessage?: string | null;
 };
 
 type TeacherClassOption = { id: string; name: string };
@@ -35,6 +36,7 @@ type MaterialApiRecord = {
   status: 'processing' | 'processed' | 'failed';
   created_at: string;
   page_count?: number | null;
+  error_message?: string | null;
   metadata?: { aiSummary?: { concepts?: Array<{ name: string }> } | null } | null;
 };
 
@@ -54,7 +56,16 @@ function formatTimeAgo(date: string) {
 
 function mapMaterial(record: MaterialApiRecord, classNames: Map<string, string>): MaterialItem {
   const extension = record.file_name.split('.').pop()?.toLowerCase();
-  const fileType: MaterialItem['fileType'] = extension === 'txt' ? 'txt' : extension === 'doc' ? 'doc' : extension === 'docx' ? 'docx' : 'pdf';
+  const fileType: MaterialItem['fileType'] =
+    extension === 'txt'
+      ? 'txt'
+      : extension === 'doc'
+      ? 'doc'
+      : extension === 'docx'
+      ? 'docx'
+      : ['png', 'jpg', 'jpeg'].includes(extension || '')
+      ? 'image'
+      : 'pdf';
   return {
     id: record.id,
     classId: record.class_id,
@@ -68,6 +79,7 @@ function mapMaterial(record: MaterialApiRecord, classNames: Map<string, string>)
     uploadedAt: record.created_at,
     timeAgo: formatTimeAgo(record.created_at),
     pageCount: record.page_count ?? undefined,
+    errorMessage: record.error_message,
   };
 }
 
@@ -92,7 +104,7 @@ function FileTypeBadge({ type }: { type: MaterialItem['fileType'] }) {
             <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
             <polyline points="14 2 14 8 20 8" />
           </svg>
-          <span className="text-[8px] font-extrabold tracking-tight text-blue-600 uppercase leading-none mt-0.5">DOCX</span>
+          <span className="text-[8px] font-extrabold tracking-tight text-blue-600 uppercase leading-none mt-0.5">{type.toUpperCase()}</span>
         </div>
       );
     case 'txt':
@@ -210,8 +222,11 @@ export function TeacherMaterials() {
     const file = files[0];
     if (!file) return;
 
-    if (file.type !== 'application/pdf') {
-      setUploadToast('Only PDF files are supported by the learning-material backend.');
+    const dotIdx = file.name.lastIndexOf('.');
+    const ext = dotIdx !== -1 ? file.name.slice(dotIdx).toLowerCase() : '';
+    const allowed = ['.pdf', '.png', '.jpg', '.jpeg', '.doc', '.docx'];
+    if (!allowed.includes(ext)) {
+      setUploadToast('Supported files are PDF, DOC, DOCX, PNG, JPG, and JPEG.');
       return;
     }
 
@@ -231,10 +246,18 @@ export function TeacherMaterials() {
     if (!response.ok) {
       setUploadToast(payload?.error?.message || 'Unable to upload material.');
     } else {
-      setUploadToast(payload.status === 'processed' ? `"${file.name}" is ready for assessments.` : `"${file.name}" was uploaded but processing failed.`);
+      if (payload.status === 'processed') {
+        setUploadToast(`"${file.name}" is ready for assessments.`);
+      } else {
+        setUploadToast(
+          payload.errorMessage
+            ? `Processing failed: ${payload.errorMessage}`
+            : `"${file.name}" was uploaded, but processing failed.`
+        );
+      }
       await loadMaterials();
     }
-    setTimeout(() => setUploadToast(null), 4000);
+    setTimeout(() => setUploadToast(null), 5000);
 
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -321,7 +344,7 @@ export function TeacherMaterials() {
             ref={fileInputRef}
             id={fileInputId}
             type="file"
-            accept=".pdf"
+            accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,application/pdf,image/png,image/jpeg,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             className="hidden"
             onChange={handleFileInputChange}
           />
@@ -349,7 +372,7 @@ export function TeacherMaterials() {
           </button>
 
           <p className="text-xs text-slate-400 mt-5 font-normal">
-            PDF · Max 20 MB
+            PDF, DOC, DOCX, PNG, JPG, JPEG · Max 20 MB
           </p>
         </div>
 
@@ -624,6 +647,13 @@ export function TeacherMaterials() {
                   {selectedMaterial.status === 'ready' ? 'Ready for Assessments' : selectedMaterial.status === 'failed' ? 'Processing failed' : 'Processing'}
                 </span>
               </div>
+
+              {selectedMaterial.status === 'failed' && selectedMaterial.errorMessage && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-3 text-xs text-rose-700">
+                  <span className="font-semibold block mb-0.5">Failure reason:</span>
+                  <p className="font-normal text-rose-600 break-words">{selectedMaterial.errorMessage}</p>
+                </div>
+              )}
 
               {selectedMaterial.extractedConcepts && selectedMaterial.extractedConcepts.length > 0 && (
                 <div className="pt-2">

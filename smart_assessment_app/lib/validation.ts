@@ -18,6 +18,63 @@ export const authLoginSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters."),
 });
 
+export const ALLOWED_MATERIAL_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx"] as const;
+export type AllowedMaterialExtension = (typeof ALLOWED_MATERIAL_EXTENSIONS)[number];
+
+export const ALLOWED_MATERIAL_MIME_TYPES = [
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/pjpeg",
+  "application/msword",
+  "application/vnd.ms-word",
+  "application/x-msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/zip",
+] as const;
+
+export function isAllowedMaterialFile(fileName: string, mimeType: string): boolean {
+  const dotIndex = fileName.lastIndexOf(".");
+  if (dotIndex === -1) return false;
+  const ext = fileName.slice(dotIndex).toLowerCase();
+  const validExt = (ALLOWED_MATERIAL_EXTENSIONS as readonly string[]).includes(ext);
+  if (!validExt) return false;
+
+  if (ext === ".pdf") return mimeType === "application/pdf" || mimeType === "application/octet-stream";
+  if (ext === ".png") return mimeType === "image/png" || mimeType === "application/octet-stream";
+  if (ext === ".jpg" || ext === ".jpeg") {
+    return (
+      ["image/jpeg", "image/jpg", "image/pjpeg", "application/octet-stream"].includes(mimeType)
+    );
+  }
+  if (ext === ".doc") {
+    return (
+      [
+        "application/msword",
+        "application/vnd.ms-word",
+        "application/x-msword",
+        "application/octet-stream",
+        "application/doc",
+      ].includes(mimeType) || mimeType.includes("word")
+    );
+  }
+  if (ext === ".docx") {
+    return (
+      [
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/zip",
+        "application/x-zip-compressed",
+        "application/octet-stream",
+      ].includes(mimeType) ||
+      mimeType.includes("word") ||
+      mimeType.includes("officedocument")
+    );
+  }
+
+  return false;
+}
+
 export const materialSchema = z.object({
   classId: z.string().min(1, "Class is required."),
   title: z.string().trim().min(2, "Title is required."),
@@ -35,6 +92,7 @@ export const aiMaterialSummarySchema = z.object({
   title: z.string().min(1),
   topic: z.string().min(1),
   summary: z.string().min(1),
+  extractedText: z.string().optional(),
   concepts: z.array(aiConceptSchema).min(1),
 });
 

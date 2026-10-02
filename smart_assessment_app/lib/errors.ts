@@ -29,10 +29,12 @@ export function toErrorResponse(error: unknown) {
     };
   }
 
+  const message = error instanceof Error ? error.message : "Something went wrong. Please try again.";
+
   return {
     error: {
       code: "INTERNAL_ERROR",
-      message: "Something went wrong. Please try again.",
+      message: message || "Something went wrong. Please try again.",
     },
   };
 }

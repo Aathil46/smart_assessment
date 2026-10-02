@@ -17,12 +17,15 @@ export default function TeacherMaterialsPage({ params }: { params: Promise<{ cla
     const file = fileInputRef.current?.files?.[0];
 
     if (!file) {
-      setError("Please choose a PDF file.");
+      setError("Please choose a file.");
       return;
     }
 
-    if (file.type !== "application/pdf") {
-      setError("Only PDF files are supported.");
+    const dotIdx = file.name.lastIndexOf(".");
+    const ext = dotIdx !== -1 ? file.name.slice(dotIdx).toLowerCase() : "";
+    const allowed = [".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx"];
+    if (!allowed.includes(ext)) {
+      setError("Supported file formats are PDF, DOC, DOCX, PNG, JPG, and JPEG.");
       return;
     }
 
@@ -34,7 +37,7 @@ export default function TeacherMaterialsPage({ params }: { params: Promise<{ cla
     try {
       setUploading(true);
       setError("");
-      setStatus("Uploading PDF...");
+      setStatus("Uploading material...");
 
       const response = await fetch("/api/materials", {
         method: "POST",
@@ -48,10 +51,15 @@ export default function TeacherMaterialsPage({ params }: { params: Promise<{ cla
         return;
       }
 
-      setStatus(`Uploaded: ${payload.title ?? file.name}`);
-      setTitle("");
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
+      if (payload.status === "failed") {
+        setError(payload.errorMessage ? `Processing failed: ${payload.errorMessage}` : "Processing failed.");
+        setStatus(null);
+      } else {
+        setStatus(`Uploaded: ${payload.title ?? file.name}`);
+        setTitle("");
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
       }
     } catch {
       setError("Upload failed. Please try again.");
@@ -68,7 +76,7 @@ export default function TeacherMaterialsPage({ params }: { params: Promise<{ cla
       </Link>
       <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <h1 className="text-3xl font-semibold text-slate-900">Upload learning material</h1>
-        <p className="mt-2 text-slate-600">Upload a PDF for this class. The backend will extract text and mark the material ready or failed.</p>
+        <p className="mt-2 text-slate-600">Upload a PDF, DOC, DOCX, or image (PNG, JPG, JPEG) for this class. The backend will extract content and mark the material ready or failed.</p>
 
         <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
           <div>
@@ -86,13 +94,13 @@ export default function TeacherMaterialsPage({ params }: { params: Promise<{ cla
 
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="file">
-              PDF file
+              File (PDF, DOC, DOCX, PNG, JPG, JPEG)
             </label>
             <input
               id="file"
               ref={fileInputRef}
               type="file"
-              accept="application/pdf"
+              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,application/pdf,image/png,image/jpeg,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-600 file:mr-4 file:rounded-md file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white"
             />
           </div>
@@ -105,7 +113,7 @@ export default function TeacherMaterialsPage({ params }: { params: Promise<{ cla
             disabled={uploading}
             className="w-full rounded-lg bg-blue-600 px-4 py-2.5 font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
           >
-            {uploading ? "Uploading..." : "Upload PDF"}
+            {uploading ? "Uploading..." : "Upload Material"}
           </button>
         </form>
       </div>

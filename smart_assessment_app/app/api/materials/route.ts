@@ -1,10 +1,16 @@
 import { randomUUID } from "crypto";
+import { unlink, writeFile } from "fs/promises";
+import os from "os";
+import path from "path";
 import { NextResponse } from "next/server";
 
 import { toErrorResponse } from "@/lib/errors";
 import { generateMaterialSummary } from "@/lib/gemini/material-summary";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { extractPdfText } from "@/lib/pdf/extract";
+import { extractDocText } from "@/lib/doc/extract";
+import { extractDocxText } from "@/lib/docx/extract";
+import { isAllowedMaterialFile } from "@/lib/validation";
 
 export async function GET(request: Request) {
   const classId = new URL(request.url).searchParams.get("classId");
@@ -19,7 +25,7 @@ export async function GET(request: Request) {
   if (ownedClassIds.length === 0) return NextResponse.json({ materials: [] });
   const { data, error } = await supabase
     .from("materials")
-    .select("id,class_id,title,file_name,mime_type,size_bytes,status,created_at,page_count,metadata")
+    .select("id,class_id,title,file_name,mime_type,size_bytes,status,created_at,page_count,metadata,error_message")
     .in("class_id", ownedClassIds)
     .order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Unable to load materials." } }, { status: 500 });
@@ -27,6 +33,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  let tempFilePath: string | null = null;
   try {
     const formData = await request.formData();
     const file = formData.get("file");
@@ -41,15 +48,18 @@ export async function POST(request: Request) {
     }
 
     if (!(file instanceof File) || !classId || typeof classId !== "string") {
-      return NextResponse.json({ error: { code: "VALIDATION_ERROR", message: "A valid PDF file and classId are required." } }, { status: 400 });
+      return NextResponse.json({ error: { code: "VALIDATION_ERROR", message: "A valid file and classId are required." } }, { status: 400 });
     }
 
-    if (file.type !== "application/pdf") {
-      return NextResponse.json({ error: { code: "INVALID_FILE", message: "Only PDF files are supported." } }, { status: 400 });
+    if (!isAllowedMaterialFile(file.name, file.type)) {
+      return NextResponse.json(
+        { error: { code: "INVALID_FILE", message: "Supported formats are PDF, DOC, DOCX, PNG, JPG, and JPEG." } },
+        { status: 400 }
+      );
     }
 
     if (file.size <= 0 || file.size > 20 * 1024 * 1024) {
-      return NextResponse.json({ error: { code: "INVALID_FILE", message: "The PDF must be non-empty and under 20MB." } }, { status: 400 });
+      return NextResponse.json({ error: { code: "INVALID_FILE", message: "The file must be non-empty and under 20MB." } }, { status: 400 });
     }
 
     const { data: classRecord } = await supabase
@@ -62,30 +72,56 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: { code: "FORBIDDEN", message: "You do not own this class." } }, { status: 403 });
     }
 
+    const dotIdx = file.name.lastIndexOf(".");
+    const ext = dotIdx !== -1 ? file.name.slice(dotIdx).toLowerCase() : ".pdf";
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    const storagePath = `materials/${classRecord.teacher_id}/${classId}/${randomUUID()}.pdf`;
+    const storagePath = `materials/${classRecord.teacher_id}/${classId}/${randomUUID()}${ext}`;
+
+    const normalizedMime =
+      ext === ".pdf"
+        ? "application/pdf"
+        : ext === ".png"
+        ? "image/png"
+        : ext === ".jpg" || ext === ".jpeg"
+        ? "image/jpeg"
+        : ext === ".doc"
+        ? "application/msword"
+        : ext === ".docx"
+        ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : file.type || "application/octet-stream";
 
     const { error: storageError } = await supabase.storage
       .from("materials")
       .upload(storagePath, buffer, {
-        contentType: "application/pdf",
+        contentType: normalizedMime,
         upsert: false,
       });
 
     if (storageError) {
-      throw new Error(storageError.message);
+      console.error("Storage upload failed:", storageError);
+      return NextResponse.json(
+        {
+          error: {
+            code: "STORAGE_ERROR",
+            message: `Storage upload failed: ${storageError.message}`,
+          },
+        },
+        { status: 500 }
+      );
     }
+
+    const materialTitle = typeof title === "string" && title.trim() ? title.trim() : file.name;
 
     const { data: materialRecord, error: insertError } = await supabase
       .from("materials")
       .insert({
         id: randomUUID(),
         class_id: classId,
-        title: typeof title === "string" && title.trim() ? title.trim() : file.name,
+        title: materialTitle,
         file_name: file.name,
         storage_path: storagePath,
-        mime_type: file.type,
+        mime_type: normalizedMime,
         size_bytes: file.size,
         status: "processing",
       })
@@ -93,29 +129,115 @@ export async function POST(request: Request) {
       .single();
 
     if (insertError || !materialRecord) {
-      throw new Error(insertError?.message ?? "Material metadata could not be saved.");
+      console.error("Database save failed:", insertError);
+      return NextResponse.json(
+        {
+          error: {
+            code: "DATABASE_ERROR",
+            message: `Database save failed: ${insertError?.message ?? "Could not save material"}`,
+          },
+        },
+        { status: 500 }
+      );
     }
 
-    const tempPath = `${process.cwd()}/tmp-${randomUUID()}.pdf`;
     try {
-      await import("fs/promises").then((fs) => fs.writeFile(tempPath, buffer));
-      const extraction = extractPdfText(tempPath);
-      const text = extraction.chunks.map((chunk) => chunk.text).join("\n\n").trim();
-      const summary = extraction.hasEnoughText
-        ? await generateMaterialSummary({ topic: typeof title === "string" ? title : file.name, text })
-        : null;
+      const isImage = ext === ".png" || ext === ".jpg" || ext === ".jpeg";
+      const isDoc = ext === ".doc";
+      const isDocx = ext === ".docx";
+
+      let extractedText = "";
+      let pageCount = 1;
+      let usedPages = 1;
+      let truncated = false;
+      let chunkCount = 1;
+      let summary: { title: string; topic: string; summary: string; extractedText?: string; concepts: Array<{ name: string; accuracy: number }> } | null = null;
+      let errorMessage: string | null = null;
+
+      if (isImage) {
+        // Send the actual image content to Gemini vision/multimodal processing
+        const mimeType = ext === ".png" ? "image/png" : "image/jpeg";
+        const base64Data = buffer.toString("base64");
+        summary = await generateMaterialSummary({
+          topic: materialTitle,
+          image: { mimeType, base64Data },
+        });
+
+        extractedText = summary?.extractedText || `${summary?.title ?? materialTitle}\n\n${summary?.summary ?? ""}`.trim();
+        pageCount = 1;
+        usedPages = 1;
+      } else if (isDocx) {
+        // Extract text from modern .docx
+        const extraction = await extractDocxText(buffer);
+        extractedText = extraction.text;
+        pageCount = extraction.pageCount;
+        usedPages = extraction.usedPages;
+        chunkCount = extraction.chunks.length;
+        truncated = extraction.truncated;
+
+        if (extraction.hasEnoughText || extractedText.length > 20) {
+          summary = await generateMaterialSummary({
+            topic: materialTitle,
+            text: extractedText,
+          });
+        } else {
+          errorMessage = "Insufficient extractable text in the DOCX file.";
+        }
+      } else if (isDoc) {
+        // Extract text from legacy .doc
+        tempFilePath = path.join(os.tmpdir(), `smart-assessment-${randomUUID()}.doc`);
+        await writeFile(tempFilePath, buffer);
+        const extraction = extractDocText(tempFilePath);
+        extractedText = extraction.text;
+        pageCount = extraction.pageCount;
+        usedPages = extraction.usedPages;
+        chunkCount = extraction.chunks.length;
+
+        if (extraction.hasEnoughText || extractedText.length > 20) {
+          summary = await generateMaterialSummary({
+            topic: materialTitle,
+            text: extractedText,
+          });
+        } else {
+          errorMessage = "Insufficient extractable text in the DOC file.";
+        }
+      } else {
+        // PDF processing (preserved exactly)
+        tempFilePath = path.join(os.tmpdir(), `smart-assessment-${randomUUID()}.pdf`);
+        await writeFile(tempFilePath, buffer);
+        const extraction = extractPdfText(tempFilePath);
+        extractedText = extraction.chunks.map((chunk) => chunk.text).join("\n\n").trim();
+        pageCount = extraction.pageCount;
+        usedPages = extraction.usedPages;
+        truncated = extraction.truncated;
+        chunkCount = extraction.chunks.length;
+
+        if (extraction.hasEnoughText || extractedText.length > 50) {
+          summary = await generateMaterialSummary({
+            topic: materialTitle,
+            text: extractedText,
+          });
+        } else {
+          errorMessage = "Insufficient extractable text in the PDF.";
+        }
+      }
+
+      const isSuccess = Boolean(summary);
+
+      const finalErrorMessage = isSuccess ? null : (errorMessage || "Unable to extract concepts from this material.");
 
       const { error: updateError } = await supabase
         .from("materials")
         .update({
-          status: summary ? "processed" : "failed",
-          error_message: summary ? null : "Insufficient extractable text in the PDF.",
-          extracted_text: text,
-          page_count: extraction.pageCount,
-          used_pages: extraction.usedPages,
+          status: isSuccess ? "processed" : "failed",
+          error_message: finalErrorMessage,
+          extracted_text: extractedText,
+          page_count: pageCount,
+          used_pages: usedPages,
           metadata: {
-            truncated: extraction.truncated,
-            chunkCount: extraction.chunks.length,
+            fileType: isImage ? "image" : isDocx ? "docx" : isDoc ? "doc" : "pdf",
+            truncated,
+            chunkCount,
             aiSummary: summary,
           },
           processed_at: new Date().toISOString(),
@@ -126,12 +248,16 @@ export async function POST(request: Request) {
         throw new Error(updateError.message);
       }
 
-      return NextResponse.json({
-        id: materialRecord.id,
-        title: materialRecord.title,
-        status: summary ? "processed" : "failed",
-        pageCount: extraction.pageCount,
-      }, { status: 201 });
+      return NextResponse.json(
+        {
+          id: materialRecord.id,
+          title: materialRecord.title,
+          status: isSuccess ? "processed" : "failed",
+          errorMessage: finalErrorMessage ?? undefined,
+          pageCount,
+        },
+        { status: 201 }
+      );
     } catch (processingError) {
       const message = processingError instanceof Error ? processingError.message : "Material processing failed.";
       console.error("Material processing failed", {
@@ -139,6 +265,7 @@ export async function POST(request: Request) {
         classId,
         message,
       });
+
       await supabase
         .from("materials")
         .update({
@@ -148,12 +275,24 @@ export async function POST(request: Request) {
         })
         .eq("id", materialRecord.id);
 
-      throw processingError;
+      return NextResponse.json(
+        {
+          id: materialRecord.id,
+          title: materialRecord.title,
+          status: "failed",
+          errorMessage: message,
+          pageCount: 1,
+        },
+        { status: 201 }
+      );
     } finally {
-      await import("fs/promises").then((fs) => fs.unlink(tempPath).catch(() => undefined));
+      if (tempFilePath) {
+        await unlink(tempFilePath).catch(() => undefined);
+      }
     }
   } catch (error) {
     return NextResponse.json(toErrorResponse(error), { status: 500 });
   }
 }
+
 
