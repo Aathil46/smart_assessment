@@ -105,10 +105,13 @@ export default function TeacherResultsPage({
     // 1. Search
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase().trim();
-      list = list.filter((s) => s.name.toLowerCase().includes(q));
+      list = list.filter((s) => 
+        s.name.toLowerCase().includes(q) ||
+        (s.roll_number ? s.roll_number.toLowerCase().includes(q) : false)
+      );
     }
 
-    // 2. Filter
+    // 3. Filter by status
     if (activeFilter === "Completed") {
       list = list.filter((s) => s.status === "Completed");
     } else if (activeFilter === "In Progress") {
@@ -119,7 +122,7 @@ export default function TeacherResultsPage({
       list = list.filter((s) => s.isWeakStudent);
     }
 
-    // 3. Sort
+    // 4. Sort
     list.sort((a, b) => {
       if (sortOption === "most_recent") {
         const timeA = a.submittedAt ? new Date(a.submittedAt).getTime() : 0;
@@ -251,7 +254,10 @@ export default function TeacherResultsPage({
                       {wc.affectedStudents.length > 0 ? (
                         <ul className="mt-2 list-inside list-disc text-sm text-slate-700">
                           {wc.affectedStudents.map((stu) => (
-                            <li key={stu.student_id}>{stu.name}</li>
+                            <li key={stu.student_id}>
+                              {stu.name}
+                              {stu.roll_number ? ` (Roll No: ${stu.roll_number})` : ''}
+                            </li>
                           ))}
                         </ul>
                       ) : (
@@ -288,7 +294,10 @@ export default function TeacherResultsPage({
                       {mc.affectedStudents.length > 0 ? (
                         <ul className="mt-2 list-inside list-disc text-sm text-slate-700">
                           {mc.affectedStudents.map((stu) => (
-                            <li key={stu.student_id}>{stu.name}</li>
+                            <li key={stu.student_id}>
+                              {stu.name}
+                              {stu.roll_number ? ` (Roll No: ${stu.roll_number})` : ''}
+                            </li>
                           ))}
                         </ul>
                       ) : (
@@ -311,7 +320,7 @@ export default function TeacherResultsPage({
             {/* Search Input */}
             <input
               type="text"
-              placeholder="Search student..."
+              placeholder="Search students..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
@@ -352,6 +361,7 @@ export default function TeacherResultsPage({
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
                   <th className="px-6 py-4 font-medium">Student</th>
+                  <th className="px-6 py-4 font-medium">Roll No</th>
                   <th className="px-6 py-4 font-medium">Score</th>
                   <th className="px-6 py-4 font-medium">Percentage</th>
                   <th className="px-6 py-4 font-medium">Status</th>
@@ -361,7 +371,7 @@ export default function TeacherResultsPage({
               <tbody className="divide-y divide-slate-200">
                 {processedStudents.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="p-6 text-center text-slate-500">
+                    <td colSpan={6} className="p-6 text-center text-slate-500">
                       {searchTerm
                         ? "No students match your search."
                         : activeFilter !== "All"
@@ -376,9 +386,12 @@ export default function TeacherResultsPage({
                         {sr.name}
                         {sr.isWeakStudent && (
                           <span className="ml-2 inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/10">
-                            Weak
+                            Needs Support
                           </span>
                         )}
+                      </td>
+                      <td className="px-6 py-4 font-medium text-slate-700">
+                        {sr.roll_number || "—"}
                       </td>
                       <td className="px-6 py-4 text-slate-600">
                         {sr.status === "Completed" ? `${sr.score} / ${sr.total}` : "—"}

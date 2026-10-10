@@ -1,8 +1,9 @@
-import { classifyConceptLevel, determinePassFail, type ConceptLevel } from "./conceptEngine";
+import { classifyConceptLevel, determinePassFail, isWeakStudent, type ConceptLevel } from "./conceptEngine";
 
 export type ProfileData = {
   id: string;
   name: string;
+  roll_number?: string | null;
 };
 
 export type ClassMemberData = {
@@ -30,6 +31,7 @@ export type ConceptPerfData = {
 export type AffectedStudent = {
   student_id: string;
   name: string;
+  roll_number?: string | null;
   accuracyPercentage: number;
 };
 
@@ -44,6 +46,7 @@ export type StudentResult = {
   student_id: string;
   attempt_id: string | null;
   name: string;
+  roll_number?: string | null;
   status: "Completed" | "In Progress" | "Not Started";
   score: number | null;
   total: number | null;
@@ -89,7 +92,7 @@ export function aggregateClassPerformance(
   attempts: AttemptData[],
   conceptPerfs: ConceptPerfData[]
 ): ClassPerformanceResult {
-  const profileMap = new Map(profiles.map((p) => [p.id, p.name]));
+  const profileMap = new Map(profiles.map((p) => [p.id, p]));
   const attemptByStudent = new Map<string, AttemptData>();
   for (const attempt of attempts) {
     attemptByStudent.set(attempt.student_id, selectLatestAttempt(attemptByStudent.get(attempt.student_id), attempt));
@@ -112,11 +115,13 @@ export function aggregateClassPerformance(
   const completedAttemptIds = new Set<string>();
 
   for (const member of members) {
-    const name = profileMap.get(member.student_id) ?? "Unknown Student";
+    const profile = profileMap.get(member.student_id);
+    const name = profile?.name ?? "Unknown Student";
+    const rollNumber = profile?.roll_number ?? null;
     const attempt = attemptByStudent.get(member.student_id);
 
     let status: StudentResult["status"] = "Not Started";
-    let isWeakStudent = false;
+    let weakStudent = false;
     let passFail: "Pass" | "Fail" | null = null;
     let percentage: number | null = null;
 
@@ -135,7 +140,7 @@ export function aggregateClassPerformance(
         }
 
         const studentPerfs = perfByAttempt.get(attempt.id) ?? [];
-        isWeakStudent = studentPerfs.some((cp) => cp.level === "Weak");
+        weakStudent = isWeakStudent(studentPerfs);
       } else {
         status = "In Progress";
         inProgress++;
@@ -146,12 +151,13 @@ export function aggregateClassPerformance(
       student_id: member.student_id,
       attempt_id: attempt?.id ?? null,
       name,
+      roll_number: rollNumber,
       status,
       score: attempt?.submitted_at ? (attempt.score ?? 0) : null,
       total: attempt?.submitted_at ? (attempt.total ?? 0) : null,
       percentage,
       passFail,
-      isWeakStudent,
+      isWeakStudent: weakStudent,
       startedAt: attempt?.started_at ?? null,
       submittedAt: attempt?.submitted_at ?? null,
     });
@@ -192,9 +198,11 @@ export function aggregateClassPerformance(
         const studentLevel = classifyConceptLevel(studentCp.accuracy);
         // Student is affected if their personal concept level matches the class concept level bucket (Weak/Medium)
         if (studentLevel === level) {
+          const profile = profileMap.get(member.student_id);
           affectedStudents.push({
             student_id: member.student_id,
-            name: profileMap.get(member.student_id) ?? "Unknown Student",
+            name: profile?.name ?? "Unknown Student",
+            roll_number: profile?.roll_number ?? null,
             accuracyPercentage: Number((studentCp.accuracy * 100).toFixed(2)),
           });
         }

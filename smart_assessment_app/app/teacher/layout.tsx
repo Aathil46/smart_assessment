@@ -5,11 +5,12 @@ import { TeacherShell } from "@/components/bolt/TeacherShell";
 import { requireTeacherSession } from "@/lib/auth/teacher";
 
 export default async function TeacherLayout({ children }: { children: ReactNode }) {
+  let sessionData;
   try {
-    await requireTeacherSession();
+    sessionData = await requireTeacherSession();
   } catch {
     redirect("/login");
   }
 
-  return <TeacherShell>{children}</TeacherShell>;
+  return <TeacherShell profile={sessionData.profile}>{children}</TeacherShell>;
 }

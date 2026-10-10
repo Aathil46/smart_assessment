@@ -105,6 +105,16 @@ export const assessmentSchema = z.object({
   topic: z.string().trim().optional(),
   numQuestions: z.coerce.number().int().min(3).max(20).default(10),
   difficulty: difficultySchema.default("medium"),
+  opensAt: z.string().nullable().optional().refine((val) => !val || !isNaN(Date.parse(val)), {
+    message: "Invalid start date & time.",
+  }),
+  closesAt: z.string().nullable().optional().refine((val) => !val || !isNaN(Date.parse(val)), {
+    message: "Invalid end date & time.",
+  }),
+}).superRefine((value, context) => {
+  if (value.opensAt && value.closesAt && new Date(value.closesAt) <= new Date(value.opensAt)) {
+    context.addIssue({ code: "custom", path: ["closesAt"], message: "End time must be after start time." });
+  }
 });
 
 export const questionSchema = z.object({
@@ -125,8 +135,12 @@ export const questionSchema = z.object({
 });
 
 export const publishSchema = z.object({
-  opensAt: z.string().datetime().nullable().optional(),
-  closesAt: z.string().datetime().nullable().optional(),
+  opensAt: z.string().nullable().optional().refine((val) => !val || !isNaN(Date.parse(val)), {
+    message: "Invalid open date & time.",
+  }),
+  closesAt: z.string().nullable().optional().refine((val) => !val || !isNaN(Date.parse(val)), {
+    message: "Invalid close date & time.",
+  }),
   attemptLimit: z.coerce.number().int().min(1).max(10).default(1),
 }).superRefine((value, context) => {
   if (value.opensAt && value.closesAt && new Date(value.closesAt) <= new Date(value.opensAt)) {

@@ -5,6 +5,7 @@ import {
   LayoutDashboard, Users, FileText, ClipboardPen, BarChart3,
   Lightbulb, GraduationCap, Building2, BookOpen, Settings,
   Sparkles, ChevronRight, School, UserCog, LineChart, AlertCircle, Target,
+  UserCircle,
 } from 'lucide-react';
 import type { Role } from '@/types';
 
@@ -33,6 +34,12 @@ const navByRole: Record<Role, { section: string; items: NavItem[] }[]> = {
         { to: '/teacher/insights', label: 'AI Teaching Insights', icon: Lightbulb },
       ],
     },
+    {
+      section: 'Account',
+      items: [
+        { to: '/teacher/profile', label: 'My Profile', icon: UserCircle },
+      ],
+    },
   ],
   student: [
     {
@@ -48,6 +55,12 @@ const navByRole: Record<Role, { section: string; items: NavItem[] }[]> = {
         { to: '/student/assessments', label: 'Assessments', icon: ClipboardPen },
         { to: '/student/results', label: 'My Results', icon: BarChart3 },
         { to: '/student/practice', label: 'Practice', icon: Sparkles },
+      ],
+    },
+    {
+      section: 'Account',
+      items: [
+        { to: '/student/profile', label: 'My Profile', icon: UserCircle },
       ],
     },
   ],

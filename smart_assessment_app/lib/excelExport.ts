@@ -57,7 +57,7 @@ export async function generateExcelReport({
   // Populate rows for every enrolled student
   for (const student of performanceResult.studentResults) {
     const rowData: Record<string, string> = {
-      student: student.name,
+      student: student.roll_number ? `${student.name} (Roll No: ${student.roll_number})` : student.name,
       score: student.status === "Completed" && student.score !== null && student.total !== null ? `${student.score} / ${student.total}` : "—",
       percentage: student.status === "Completed" && student.percentage !== null ? `${student.percentage}%` : "—",
       status: student.status,

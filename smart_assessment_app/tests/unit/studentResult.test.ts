@@ -96,8 +96,8 @@ describe("Phase 5 — Student Results data contract", () => {
       expect(stomata.level).toBe("Strong");
     });
 
-    it("provides Weak Student status from backend", () => {
-      expect(result.isWeakStudent).toBe(true);
+    it("provides Weak Student status from backend (1 of 4 weak = 25% <= 40% -> not weak)", () => {
+      expect(result.isWeakStudent).toBe(false);
     });
 
     it("provides learning gaps only for Weak concepts", () => {

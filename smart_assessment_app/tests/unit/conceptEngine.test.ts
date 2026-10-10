@@ -62,8 +62,8 @@ describe("V3 Phase 4 Concept Engine", () => {
     });
   });
 
-  describe("Weak Student Derivation (Locked V3)", () => {
-    it("marks student as Weak if they have at least one Weak concept, even with a high overall score", () => {
+  describe("Weak Student Derivation (Weak Concept Ratio > 40%)", () => {
+    it("does NOT mark student as Weak if weak concept ratio is <= 40% (1 of 3 = 33.3%)", () => {
       const conceptPerformance = [
         {
           concept: "Chlorophyll",
@@ -91,6 +91,39 @@ describe("V3 Phase 4 Concept Engine", () => {
         },
       ];
 
+      // 1 weak out of 3 = 33.33% <= 40% -> false
+      expect(isWeakStudent(conceptPerformance)).toBe(false);
+    });
+
+    it("marks student as Weak if weak concept ratio > 40% (2 of 3 = 66.7%), even with a high overall score", () => {
+      const conceptPerformance = [
+        {
+          concept: "Chlorophyll",
+          correctCount: 10,
+          totalCount: 10,
+          accuracy: 1.0,
+          accuracyPercentage: 100,
+          level: "Strong" as const,
+        },
+        {
+          concept: "Light reactions",
+          correctCount: 1,
+          totalCount: 3,
+          accuracy: 1 / 3,
+          accuracyPercentage: 33.33,
+          level: "Weak" as const,
+        },
+        {
+          concept: "Stomata",
+          correctCount: 0,
+          totalCount: 2,
+          accuracy: 0.0,
+          accuracyPercentage: 0,
+          level: "Weak" as const,
+        },
+      ];
+
+      // 2 weak out of 3 = 66.67% > 40% -> true
       expect(isWeakStudent(conceptPerformance)).toBe(true);
     });
 
@@ -211,7 +244,8 @@ describe("V3 Phase 4 Concept Engine", () => {
       expect(result.total).toBe(10);
       expect(result.percentage).toBe(70);
       expect(result.passFail).toBe("Pass");
-      expect(result.isWeakStudent).toBe(true);
+      // 1 weak out of 4 distinct concepts = 25% <= 40% -> not flagged
+      expect(result.isWeakStudent).toBe(false);
 
       const chlorophyll = result.conceptPerformance.find((c) => c.concept === "Chlorophyll");
       expect(chlorophyll).toEqual({

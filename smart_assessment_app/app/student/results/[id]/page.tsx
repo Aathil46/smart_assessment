@@ -16,6 +16,7 @@ import {
   Info,
   Lightbulb,
 } from "lucide-react";
+import { RecommendedVideosSection } from "@/components/bolt/student/RecommendedVideosSection";
 
 interface ConceptItem {
   concept: string;
@@ -511,6 +512,9 @@ export default function StudentResultDetailPage({
           </div>
         )}
       </section>
+
+      {/* ─── Workflow Step 6: Recommended Educational Videos ─── */}
+      <RecommendedVideosSection attemptId={data.attempt.id} />
 
       {/* ─── Footer Action ─── */}
       <div className="pt-6 border-t border-slate-200 flex justify-center">

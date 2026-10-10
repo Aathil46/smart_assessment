@@ -79,12 +79,100 @@ export function determinePassFail(score: number, total: number): PassFailStatus 
 }
 
 /**
- * Determines if a student is considered Weak.
- * Locked V3 Rule:
- * - A student is Weak if they have at least ONE Weak concept (accuracy < 50%).
+ * Determines if a student is classified as "Needs Support" based on their weak concept ratio.
+ *
+ * Formula:
+ * weakConceptRatio = weakConceptCount / totalAssessedConceptCount
+ * needsSupport = weakConceptRatio > 0.40
+ *
+ * Rules:
+ * - weakConceptCount: number of distinct assessed concepts where the student is classified as Weak (accuracy < 0.50).
+ * - totalAssessedConceptCount: number of distinct assessed concepts actually assessed for that student.
+ * - Distinct concepts are counted only once per student (multiple questions mapped to the same concept
+ *   do not inflate denominator or numerator).
+ * - Strict greater-than comparison (> 0.40). Exactly 40% is NOT flagged.
+ * - If totalAssessedConceptCount is 0, safely returns false (no division by zero).
  */
-export function isWeakStudent(conceptPerformance: ConceptPerformanceResult[]): boolean {
-  return conceptPerformance.some((cp) => cp.level === "Weak");
+export function isWeakStudent(
+  conceptPerformance: Array<{
+    concept: string;
+    level?: ConceptLevel | string;
+    accuracy?: number;
+    correctCount?: number;
+    totalCount?: number;
+    correct_count?: number;
+    total_count?: number;
+  }>,
+): boolean {
+  if (!conceptPerformance || !Array.isArray(conceptPerformance) || conceptPerformance.length === 0) {
+    return false;
+  }
+
+  // Deduplicate distinct concepts by normalized name
+  const conceptMap = new Map<
+    string,
+    {
+      hasWeak: boolean;
+      correctCount: number;
+      totalCount: number;
+      hasCounts: boolean;
+      level?: string;
+    }
+  >();
+
+  for (const cp of conceptPerformance) {
+    if (!cp || typeof cp.concept !== "string") continue;
+    const trimmed = cp.concept.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+
+    const correct = cp.correctCount ?? cp.correct_count;
+    const total = cp.totalCount ?? cp.total_count;
+    const hasCounts = typeof correct === "number" && typeof total === "number" && total > 0;
+
+    const existing = conceptMap.get(key);
+    if (!existing) {
+      conceptMap.set(key, {
+        hasWeak: cp.level === "Weak" || (typeof cp.accuracy === "number" && cp.accuracy < 0.5),
+        correctCount: hasCounts ? correct : 0,
+        totalCount: hasCounts ? total : 0,
+        hasCounts,
+        level: cp.level,
+      });
+    } else {
+      if (hasCounts) {
+        existing.correctCount += correct;
+        existing.totalCount += total;
+        existing.hasCounts = true;
+      }
+      if (cp.level === "Weak" || (typeof cp.accuracy === "number" && cp.accuracy < 0.5)) {
+        existing.hasWeak = true;
+      }
+    }
+  }
+
+  const totalAssessedConceptCount = conceptMap.size;
+  if (totalAssessedConceptCount === 0) {
+    return false;
+  }
+
+  let weakConceptCount = 0;
+  for (const entry of conceptMap.values()) {
+    let isWeak = false;
+    if (entry.hasCounts && entry.totalCount > 0) {
+      const accuracy = entry.correctCount / entry.totalCount;
+      isWeak = classifyConceptLevel(accuracy) === "Weak";
+    } else {
+      isWeak = entry.hasWeak || entry.level === "Weak";
+    }
+
+    if (isWeak) {
+      weakConceptCount += 1;
+    }
+  }
+
+  const weakConceptRatio = weakConceptCount / totalAssessedConceptCount;
+  return weakConceptRatio > 0.40;
 }
 
 /**

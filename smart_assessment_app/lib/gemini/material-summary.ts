@@ -123,8 +123,9 @@ export async function generateMaterialSummary(input: {
   topic: string;
   text?: string;
   image?: { mimeType: string; base64Data: string };
+  apiKey?: string;
 }) {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = input.apiKey || process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("Gemini API key is not configured.");
   }

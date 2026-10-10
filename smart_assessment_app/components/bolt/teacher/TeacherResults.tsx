@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from '@/components/bolt/router';
 import {
-  FileText, Users, BarChart3, Target, Search,
-  ChevronLeft, ChevronRight, MoreVertical, Eye,
-  Download, TrendingUp, ArrowUpRight,
+  FileText, Search, ChevronLeft, ChevronRight,
+  MoreVertical, Eye, Download, ArrowUpRight,
+  Calendar, Check, X,
 } from 'lucide-react';
 import { Dropdown, DropdownItem } from '@/components/ui/Dropdown';
 import { cn } from '@/lib/utils';
@@ -22,6 +22,7 @@ export interface ResultAssessment {
   passRate: number;
   status: 'published' | 'draft';
   createdAt: string;
+  createdAtRaw?: string;
   color: 'teal' | 'blue' | 'amber' | 'purple' | 'rose' | 'emerald' | 'orange' | 'sky';
 }
 
@@ -39,13 +40,64 @@ const iconColors: Record<ResultAssessment['color'], { bg: string; border: string
   sky:     { bg: 'bg-[#f0f9ff]', border: 'border-[#e0f2fe]', text: 'text-[#0284c7]' },
 };
 
-/* ─── Stat card colours ──────────────────────────────────────── */
-const statCardStyles = [
-  { bg: 'bg-[#eff6ff]', iconBg: 'bg-[#dbeafe]', iconText: 'text-[#2563eb]' },
-  { bg: 'bg-[#f0fdfa]', iconBg: 'bg-[#ccfbf1]', iconText: 'text-[#0d9488]' },
-  { bg: 'bg-[#fef2f2]', iconBg: 'bg-[#fecaca]', iconText: 'text-[#dc2626]' },
-  { bg: 'bg-[#fef2f2]', iconBg: 'bg-[#fecaca]', iconText: 'text-[#dc2626]' },
+const MONTHS = [
+  { num: '01', label: 'Jan' },
+  { num: '02', label: 'Feb' },
+  { num: '03', label: 'Mar' },
+  { num: '04', label: 'Apr' },
+  { num: '05', label: 'May' },
+  { num: '06', label: 'Jun' },
+  { num: '07', label: 'Jul' },
+  { num: '08', label: 'Aug' },
+  { num: '09', label: 'Sep' },
+  { num: '10', label: 'Oct' },
+  { num: '11', label: 'Nov' },
+  { num: '12', label: 'Dec' },
 ];
+
+function getAssessmentMonthKey(a: ResultAssessment): string | null {
+  const dateStr = a.createdAtRaw || a.createdAt;
+  if (!dateStr || dateStr === '—') return null;
+  const parsed = new Date(dateStr);
+  if (isNaN(parsed.getTime())) return null;
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+function formatSelectedMonthsLabel(monthKeys: string[]): string {
+  if (!monthKeys || monthKeys.length === 0) {
+    return 'Select Months';
+  }
+  const sorted = [...monthKeys].sort();
+  const monthMap: Record<string, string> = {
+    '01': 'Jan', '02': 'Feb', '03': 'Mar', '04': 'Apr',
+    '05': 'May', '06': 'Jun', '07': 'Jul', '08': 'Aug',
+    '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dec',
+  };
+
+  const byYear: Record<string, string[]> = {};
+  for (const key of sorted) {
+    const [yr, m] = key.split('-');
+    if (!byYear[yr]) byYear[yr] = [];
+    byYear[yr].push(monthMap[m] || m);
+  }
+
+  const yearKeys = Object.keys(byYear).sort();
+
+  if (sorted.length <= 3) {
+    return yearKeys
+      .map((yr) => `${byYear[yr].join(', ')} ${yr}`)
+      .join(', ');
+  }
+
+  const firstTwo = sorted.slice(0, 2).map((key) => {
+    const [yr, m] = key.split('-');
+    return `${monthMap[m]} ${yr}`;
+  }).join(', ');
+
+  return `${firstTwo} (+${sorted.length - 2})`;
+}
 
 export function TeacherResults() {
   const navigate = useNavigate();
@@ -57,7 +109,13 @@ export function TeacherResults() {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [filterClass, setFilterClass] = useState('all');
-  const [filterPeriod, setFilterPeriod] = useState('3months');
+
+  // Calendar-style multi-month filter state
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
+  const [tempSelectedMonths, setTempSelectedMonths] = useState<string[]>([]);
+  const [isMonthSelectorOpen, setIsMonthSelectorOpen] = useState(false);
+  const [viewingYear, setViewingYear] = useState<number>(new Date().getFullYear());
+  const monthSelectorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -89,42 +147,107 @@ export function TeacherResults() {
     };
   }, []);
 
-  /* Published assessments */
-  const publishedAssessments = isHydrated
-    ? assessmentList.filter((a) => a.status === 'published')
-    : [];
+  // Close month selector popover when clicking outside or pressing Escape
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        monthSelectorRef.current &&
+        !monthSelectorRef.current.contains(event.target as Node)
+      ) {
+        setIsMonthSelectorOpen(false);
+      }
+    }
 
-  const filterDateCutoff = useMemo(() => {
-    if (filterPeriod === 'alltime') return 0;
-    const now = Date.now();
-    const dayMs = 24 * 60 * 60 * 1000;
-    if (filterPeriod === '3months') return now - 90 * dayMs;
-    if (filterPeriod === '6months') return now - 180 * dayMs;
-    if (filterPeriod === '1year') return now - 365 * dayMs;
-    return 0;
-  }, [filterPeriod]);
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsMonthSelectorOpen(false);
+      }
+    }
+
+    if (isMonthSelectorOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isMonthSelectorOpen]);
+
+  // Determine available years from data + current/adjacent years
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    const currentYear = new Date().getFullYear();
+    years.add(currentYear);
+    years.add(currentYear - 1);
+
+    for (const a of assessmentList) {
+      const key = getAssessmentMonthKey(a);
+      if (key) {
+        const y = parseInt(key.split('-')[0], 10);
+        if (!isNaN(y)) years.add(y);
+      }
+    }
+    return Array.from(years).sort((a, b) => a - b);
+  }, [assessmentList]);
+
+  const handleToggleMonthSelector = () => {
+    if (!isMonthSelectorOpen) {
+      setTempSelectedMonths([...selectedMonths]);
+      if (selectedMonths.length > 0) {
+        const firstSelectedYear = parseInt(selectedMonths[0].split('-')[0], 10);
+        if (!isNaN(firstSelectedYear)) {
+          setViewingYear(firstSelectedYear);
+        }
+      }
+    }
+    setIsMonthSelectorOpen((prev) => !prev);
+  };
+
+  const handleToggleMonth = (monthKey: string) => {
+    setTempSelectedMonths((prev) =>
+      prev.includes(monthKey)
+        ? prev.filter((k) => k !== monthKey)
+        : [...prev, monthKey]
+    );
+  };
+
+  /* Base assessments by tab */
+  const baseAssessments = useMemo(() => {
+    if (!isHydrated) return [];
+    if (activeTab === 'published') {
+      return assessmentList.filter((a) => a.status === 'published');
+    }
+    return assessmentList;
+  }, [isHydrated, assessmentList, activeTab]);
 
   /* Search & filter */
   const filteredAssessments = useMemo(() => {
     if (!isHydrated) return [];
-    let list = publishedAssessments;
+    let list = baseAssessments;
+
     if (filterClass !== 'all') {
       list = list.filter((a) => a.displayClass === filterClass);
     }
-    if (filterDateCutoff > 0) {
+
+    if (selectedMonths.length > 0) {
+      const selectedSet = new Set(selectedMonths);
       list = list.filter((a) => {
-        const time = new Date(a.createdAt).getTime();
-        return isNaN(time) || time >= filterDateCutoff;
+        const key = getAssessmentMonthKey(a);
+        return key !== null && selectedSet.has(key);
       });
     }
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter(
         (a) => a.title.toLowerCase().includes(q) || a.description.toLowerCase().includes(q)
       );
     }
+
     return list;
-  }, [isHydrated, publishedAssessments, filterClass, filterDateCutoff, searchQuery]);
+  }, [isHydrated, baseAssessments, filterClass, selectedMonths, searchQuery]);
 
   /* Pagination */
   const totalPages = Math.max(1, Math.ceil(filteredAssessments.length / ITEMS_PER_PAGE));
@@ -133,23 +256,15 @@ export function TeacherResults() {
     currentPage * ITEMS_PER_PAGE
   );
 
-  /* Stats (always from all published, unfiltered) */
-  const totalAssessments = isHydrated ? publishedAssessments.length : 0;
-  const totalStudents = isHydrated
-    ? publishedAssessments.reduce((s, a) => s + a.studentsTotal, 0)
+  /* Tab counts */
+  const allCount = isHydrated ? assessmentList.length : 0;
+  const publishedCount = isHydrated
+    ? assessmentList.filter((a) => a.status === 'published').length
     : 0;
-  const avgScore =
-    totalAssessments > 0
-      ? Math.round(publishedAssessments.reduce((s, a) => s + a.avgScore, 0) / totalAssessments)
-      : 0;
-  const overallPassRate =
-    totalAssessments > 0
-      ? Math.round(publishedAssessments.reduce((s, a) => s + a.passRate, 0) / totalAssessments)
-      : 0;
 
   /* Unique class names for filter dropdown */
   const classNames = isHydrated
-    ? [...new Set(publishedAssessments.map((a) => a.displayClass))]
+    ? [...new Set(assessmentList.map((a) => a.displayClass))]
     : [];
 
   return (
@@ -184,19 +299,156 @@ export function TeacherResults() {
             <ChevronRight className="h-4 w-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 rotate-90 pointer-events-none" />
           </div>
 
-          {/* Period filter */}
-          <div className="relative">
-            <select
-              value={filterPeriod}
-              onChange={(e) => setFilterPeriod(e.target.value)}
-              className="h-10 pl-4 pr-8 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 font-medium appearance-none focus:outline-none focus:ring-2 focus:ring-[#0d9488]/30 focus:border-[#0d9488] transition-all cursor-pointer"
+          {/* Calendar-style Multi-Month Selector Popover */}
+          <div className="relative" ref={monthSelectorRef}>
+            <button
+              type="button"
+              onClick={handleToggleMonthSelector}
+              className={cn(
+                'h-10 px-3.5 rounded-xl border bg-white text-sm font-medium transition-all cursor-pointer flex items-center gap-2 select-none',
+                selectedMonths.length > 0
+                  ? 'border-[#0d9488] text-slate-900 bg-[#f0fdfa]/40 ring-1 ring-[#0d9488]/30'
+                  : isMonthSelectorOpen
+                  ? 'border-[#0d9488] ring-2 ring-[#0d9488]/20 text-slate-900'
+                  : 'border-slate-200 text-slate-700 hover:border-slate-300'
+              )}
             >
-              <option value="3months">Last 3 Months</option>
-              <option value="6months">Last 6 Months</option>
-              <option value="1year">Last Year</option>
-              <option value="alltime">All Time</option>
-            </select>
-            <ChevronRight className="h-4 w-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 rotate-90 pointer-events-none" />
+              <Calendar className={cn('h-4 w-4 shrink-0', selectedMonths.length > 0 ? 'text-[#0d9488]' : 'text-slate-400')} />
+              <span className="truncate max-w-[170px] sm:max-w-[210px]">
+                {formatSelectedMonthsLabel(selectedMonths)}
+              </span>
+              <ChevronRight
+                className={cn(
+                  'h-4 w-4 text-slate-400 transition-transform duration-200 rotate-90 shrink-0',
+                  isMonthSelectorOpen && '-rotate-90 text-[#0d9488]'
+                )}
+              />
+            </button>
+
+            {/* Dropdown / Popover */}
+            {isMonthSelectorOpen && (
+              <div className="absolute right-0 sm:right-auto sm:left-0 mt-2 w-80 sm:w-[340px] bg-white border border-slate-200 rounded-2xl shadow-xl p-4 z-50 animate-scale-in">
+                {/* Year Header & Switcher */}
+                <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setViewingYear((y) => y - 1)}
+                    className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                    title="Previous year"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+
+                  <div className="flex items-center gap-1 overflow-x-auto py-0.5">
+                    {availableYears.map((yr) => {
+                      const countInYear = tempSelectedMonths.filter((k) => k.startsWith(`${yr}-`)).length;
+                      const isCurrentView = viewingYear === yr;
+                      return (
+                        <button
+                          key={yr}
+                          type="button"
+                          onClick={() => setViewingYear(yr)}
+                          className={cn(
+                            'px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer',
+                            isCurrentView
+                              ? 'bg-slate-900 text-white shadow-xs'
+                              : 'text-slate-600 hover:bg-slate-100'
+                          )}
+                        >
+                          <span>{yr}</span>
+                          {countInYear > 0 && (
+                            <span
+                              className={cn(
+                                'h-4 min-w-[16px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center',
+                                isCurrentView ? 'bg-[#0d9488] text-white' : 'bg-[#ccfbf1] text-[#0f766e]'
+                              )}
+                            >
+                              {countInYear}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setViewingYear((y) => y + 1)}
+                    className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                    title="Next year"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* 12 Months Grid */}
+                <div className="grid grid-cols-4 gap-2 mb-3.5">
+                  {MONTHS.map((m) => {
+                    const key = `${viewingYear}-${m.num}`;
+                    const isSelected = tempSelectedMonths.includes(key);
+                    return (
+                      <button
+                        key={m.num}
+                        type="button"
+                        onClick={() => handleToggleMonth(key)}
+                        className={cn(
+                          'h-10 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1 select-none cursor-pointer',
+                          isSelected
+                            ? 'bg-[#0d9488] text-white shadow-xs'
+                            : 'bg-slate-50 hover:bg-slate-100 hover:text-slate-900 text-slate-700 border border-slate-200/60'
+                        )}
+                      >
+                        {isSelected && <Check className="h-3.5 w-3.5 stroke-[2.5]" />}
+                        <span>{m.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Selected Status Text */}
+                <div className="text-[11px] text-slate-500 mb-3 truncate font-normal px-0.5">
+                  {tempSelectedMonths.length === 0 ? (
+                    <span className="text-slate-400">All months (no specific filter)</span>
+                  ) : (
+                    <span>
+                      Selected ({tempSelectedMonths.length}): <strong className="text-slate-700 font-medium">{formatSelectedMonthsLabel(tempSelectedMonths)}</strong>
+                    </span>
+                  )}
+                </div>
+
+                {/* Popover Actions */}
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTempSelectedMonths([])}
+                    className="text-xs font-semibold text-slate-500 hover:text-rose-600 transition-colors py-1 px-2 rounded-lg hover:bg-slate-50 cursor-pointer"
+                  >
+                    Clear
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsMonthSelectorOpen(false)}
+                      className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedMonths(tempSelectedMonths);
+                        setIsMonthSelectorOpen(false);
+                        setCurrentPage(1);
+                      }}
+                      className="h-8 px-3.5 rounded-lg bg-[#0d9488] hover:bg-[#0f766e] active:bg-[#115e59] text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                    >
+                      Apply Filters
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Create Assessment button */}
@@ -211,65 +463,40 @@ export function TeacherResults() {
         </div>
       </div>
 
-      {/* ──── Stat cards ──────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 stagger">
-        {/* Total Assessments */}
-        <div className={cn('rounded-2xl p-5 flex items-center gap-4', statCardStyles[0].bg)}>
-          <div className={cn('h-11 w-11 rounded-xl flex items-center justify-center', statCardStyles[0].iconBg)}>
-            <FileText className={cn('h-5 w-5', statCardStyles[0].iconText)} />
+      {/* ──── Summary Card: Total Assessments Only ────────────── */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-5 rounded-2xl bg-[#eff6ff] border border-[#dbeafe] shadow-xs">
+        <div className="flex items-center gap-4">
+          <div className="h-12 w-12 rounded-xl flex items-center justify-center bg-[#dbeafe] text-[#2563eb] shadow-2xs shrink-0">
+            <FileText className="h-6 w-6 text-[#2563eb]" />
           </div>
           <div>
             <p className="text-xs text-slate-500 font-medium">Total Assessments</p>
-            <p className="text-2xl font-bold text-slate-900 mt-0.5">{totalAssessments}</p>
-            <p className="text-xs text-slate-400 mt-0.5">{totalAssessments} published</p>
+            <p className="text-2xl font-bold text-slate-900 mt-0.5">{filteredAssessments.length}</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {filteredAssessments.length === publishedCount
+                ? `${publishedCount} published`
+                : `${filteredAssessments.length} of ${publishedCount} published`}
+            </p>
           </div>
         </div>
 
-        {/* Total Students */}
-        <div className={cn('rounded-2xl p-5 flex items-center gap-4', statCardStyles[1].bg)}>
-          <div className={cn('h-11 w-11 rounded-xl flex items-center justify-center', statCardStyles[1].iconBg)}>
-            <Users className={cn('h-5 w-5', statCardStyles[1].iconText)} />
+        {selectedMonths.length > 0 && (
+          <div className="flex items-center gap-2 self-start sm:self-center bg-white/95 border border-blue-200 px-3 py-1.5 rounded-xl text-xs text-slate-600 font-medium shadow-2xs">
+            <Calendar className="h-3.5 w-3.5 text-[#0d9488]" />
+            <span>Months: <strong className="text-slate-800 font-semibold">{formatSelectedMonthsLabel(selectedMonths)}</strong></span>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedMonths([]);
+                setCurrentPage(1);
+              }}
+              className="text-slate-400 hover:text-rose-600 ml-1 font-bold leading-none cursor-pointer"
+              title="Remove month filter"
+            >
+              ×
+            </button>
           </div>
-          <div>
-            <p className="text-xs text-slate-500 font-medium">Total Students</p>
-            <p className="text-2xl font-bold text-slate-900 mt-0.5">{totalStudents}</p>
-            <p className="text-xs text-slate-400 mt-0.5">Across all classes</p>
-          </div>
-        </div>
-
-        {/* Average Score */}
-        <div className="rounded-2xl p-5 flex items-center gap-4 bg-[#fef2f2]">
-          <div className="h-11 w-11 rounded-xl flex items-center justify-center bg-[#fee2e2]">
-            <BarChart3 className="h-5 w-5 text-[#dc2626]" />
-          </div>
-          <div>
-            <p className="text-xs text-slate-500 font-medium">Average Score</p>
-            <div className="flex items-baseline gap-2 mt-0.5">
-              <p className="text-2xl font-bold text-slate-900">{avgScore}%</p>
-              <span className="flex items-center gap-0.5 text-xs font-medium text-[#16a34a]">
-                <TrendingUp className="h-3 w-3" /> 6%
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5">vs. previous period</p>
-          </div>
-        </div>
-
-        {/* Pass Rate */}
-        <div className="rounded-2xl p-5 flex items-center gap-4 bg-[#fef2f2]">
-          <div className="h-11 w-11 rounded-xl flex items-center justify-center bg-[#fee2e2]">
-            <Target className="h-5 w-5 text-[#dc2626]" />
-          </div>
-          <div>
-            <p className="text-xs text-slate-500 font-medium">Pass Rate</p>
-            <div className="flex items-baseline gap-2 mt-0.5">
-              <p className="text-2xl font-bold text-slate-900">{overallPassRate}%</p>
-              <span className="flex items-center gap-0.5 text-xs font-medium text-[#16a34a]">
-                <TrendingUp className="h-3 w-3" /> 8%
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5">vs. previous period</p>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* ──── Tabs + search ────────────────────────────────────── */}
@@ -296,7 +523,7 @@ export function TeacherResults() {
                 activeTab === 'all' ? 'bg-[#0d9488] text-white' : 'bg-slate-200 text-slate-600'
               )}
             >
-              {publishedAssessments.length}
+              {allCount}
             </span>
           </button>
 
@@ -320,7 +547,7 @@ export function TeacherResults() {
                 activeTab === 'published' ? 'bg-[#0d9488] text-white' : 'bg-slate-200 text-slate-600'
               )}
             >
-              {publishedAssessments.length}
+              {publishedCount}
             </span>
           </button>
         </div>

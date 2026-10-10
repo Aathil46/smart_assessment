@@ -71,6 +71,7 @@ function MoleculeIcon({ className = "h-5 w-5" }: { className?: string }) {
 interface SupportStudent {
   id: string;
   name: string;
+  rollNumber?: string | null;
   initials: string;
   score: number;
   status: 'needs-support';
@@ -93,6 +94,7 @@ interface ConceptItem {
 interface StudentRow {
   id: string;
   name: string;
+  rollNumber?: string | null;
   initials: string;
   score: number | null;
   status: 'passed' | 'needs-support' | 'in-progress' | 'not-started';
@@ -187,15 +189,17 @@ export function AssessmentDetail() {
     if (!resultsData?.studentResults) return [];
     return resultsData.studentResults.map((s: any) => {
       const isCompleted = s.status === 'Completed';
-      const isFailed = s.passFail === 'Fail' || s.isWeakStudent;
+      const isNeedsSupport = Boolean(s.isWeakStudent);
       const status: StudentRow['status'] = isCompleted
-        ? (isFailed ? 'needs-support' : 'passed')
+        ? (isNeedsSupport ? 'needs-support' : 'passed')
         : (s.status === 'In Progress' ? 'in-progress' : 'not-started');
 
       const name = s.name || 'Student';
+      const rollNumber = typeof s.roll_number === 'string' && s.roll_number.trim() ? s.roll_number.trim() : null;
       return {
         id: s.student_id,
         name: name,
+        rollNumber: rollNumber,
         initials: getInitials(name),
         score: s.percentage !== null && s.percentage !== undefined ? Math.round(s.percentage) : null,
         status: status,
@@ -204,6 +208,7 @@ export function AssessmentDetail() {
       };
     });
   }, [resultsData]);
+
 
   /* ── map real support concepts ── */
   const supportConcepts = useMemo<ConceptItem[]>(() => {
@@ -214,9 +219,11 @@ export function AssessmentDetail() {
       const cId = c.concept.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       const affected = (c.affectedStudents ?? []).map((s: any, sIdx: number) => {
         const name = s.name || 'Student';
+        const rollNumber = typeof s.roll_number === 'string' && s.roll_number.trim() ? s.roll_number.trim() : null;
         return {
           id: s.student_id,
           name: name,
+          rollNumber: rollNumber,
           initials: getInitials(name),
           score: Math.round(s.accuracyPercentage),
           status: 'needs-support' as const,
@@ -289,8 +296,12 @@ export function AssessmentDetail() {
   }, [tab, studentRows]);
 
   const searched = useMemo(() => {
-    if (!search.trim()) return tabFiltered;
-    return tabFiltered.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
+    const q = search.trim().toLowerCase();
+    if (!q) return tabFiltered;
+    return tabFiltered.filter(s =>
+      s.name.toLowerCase().includes(q) ||
+      (s.rollNumber ? s.rollNumber.toLowerCase().includes(q) : false)
+    );
   }, [tabFiltered, search]);
 
   const sorted = useMemo(() => {
@@ -327,9 +338,11 @@ export function AssessmentDetail() {
   /* ── filtered support students for selected concept ── */
   const filteredConceptStudents = useMemo(() => {
     if (!selectedConcept) return [];
-    if (!supportStudentSearch.trim()) return selectedConcept.students;
+    const q = supportStudentSearch.trim().toLowerCase();
+    if (!q) return selectedConcept.students;
     return selectedConcept.students.filter(s =>
-      s.name.toLowerCase().includes(supportStudentSearch.toLowerCase())
+      s.name.toLowerCase().includes(q) ||
+      (s.rollNumber ? s.rollNumber.toLowerCase().includes(q) : false)
     );
   }, [selectedConcept, supportStudentSearch]);
 
@@ -814,6 +827,7 @@ export function AssessmentDetail() {
                       <tr className="border-b border-slate-100 text-xs font-semibold text-slate-400">
                         <th className="py-3 pl-5 pr-3 w-8">#</th>
                         <th className="py-3 px-4">Student</th>
+                        <th className="py-3 px-4">Roll No</th>
                         <th className="py-3 px-4">Score</th>
                         <th className="py-3 px-4">Status</th>
                         <th className="py-3 px-4">Time Taken</th>
@@ -823,7 +837,7 @@ export function AssessmentDetail() {
                     <tbody className="divide-y divide-slate-100 text-sm">
                       {filteredConceptStudents.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="text-center py-10 text-slate-400 text-xs">
+                          <td colSpan={7} className="text-center py-10 text-slate-400 text-xs">
                             No students found matching your search.
                           </td>
                         </tr>
@@ -844,8 +858,15 @@ export function AssessmentDetail() {
                                 )}>
                                   {st.initials}
                                 </div>
-                                <span className="font-medium text-slate-900">{st.name}</span>
+                                <span className="font-medium text-slate-900">
+                                  {st.name}
+                                </span>
                               </div>
+                            </td>
+
+                            {/* Roll No */}
+                            <td className="py-3.5 px-4 font-medium text-slate-700">
+                              {st.rollNumber || '—'}
                             </td>
 
                             {/* Score */}
@@ -924,7 +945,7 @@ export function AssessmentDetail() {
               {tab === 'not-started' && `Not Started (${notStartedCount})`}
             </div>
 
-            {/* Search + Sort + Export */}
+            {/* Search + Roll Filter + Sort + Export */}
             <div className="flex items-center gap-2 flex-shrink-0">
               {/* Search */}
               <div className="relative">
@@ -965,6 +986,7 @@ export function AssessmentDetail() {
               {/* Export */}
               <button
                 type="button"
+                onClick={() => window.open(`/api/results/teacher/${assessmentId}/export`, '_blank')}
                 className="h-8 px-3 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-700 flex items-center gap-1.5 hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 <Download className="h-3.5 w-3.5" />
@@ -979,18 +1001,19 @@ export function AssessmentDetail() {
               <thead className="sticky top-0 z-10 bg-white">
                 <tr className="border-b border-slate-100 text-xs font-semibold text-slate-400">
                   <th className="py-3 pl-5 pr-3 w-8">#</th>
-                  <th className="py-3 px-4 w-[28%]">Student</th>
+                  <th className="py-3 px-4 w-[22%]">Student</th>
+                  <th className="py-3 px-4 w-[14%]">Roll No</th>
                   <th className="py-3 px-4 w-[10%]">Score</th>
                   <th className="py-3 px-4 w-[14%]">Status</th>
-                  <th className="py-3 px-4 w-[12%]">Time Taken</th>
-                  <th className="py-3 px-4 w-[22%]">Submitted On</th>
-                  <th className="py-3 pr-5 pl-2 w-[14%] text-right">Actions</th>
+                  <th className="py-3 px-4 w-[11%]">Time Taken</th>
+                  <th className="py-3 px-4 w-[17%]">Submitted On</th>
+                  <th className="py-3 pr-5 pl-2 w-[12%] text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
                 {sorted.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-14 text-slate-400">
+                    <td colSpan={8} className="text-center py-14 text-slate-400">
                       No students match your search.
                     </td>
                   </tr>
@@ -1016,8 +1039,15 @@ export function AssessmentDetail() {
                             )}>
                               {student.initials}
                             </div>
-                            <span className="font-medium text-slate-900">{student.name}</span>
+                            <span className="font-medium text-slate-900">
+                              {student.name}
+                            </span>
                           </div>
+                        </td>
+
+                        {/* Roll No */}
+                        <td className="py-3.5 px-4 font-medium text-slate-700">
+                          {student.rollNumber || '—'}
                         </td>
 
                         {/* Score */}

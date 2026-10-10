@@ -41,14 +41,39 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
 
   const { data: material } = await supabase
     .from("materials")
-    .select("id,storage_path,classes!inner(teacher_id)")
+    .select("id,storage_path,mime_type,metadata,classes!inner(teacher_id)")
     .eq("id", id)
     .eq("classes.teacher_id", userData.user.id)
     .single();
   if (!material) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Material not found." } }, { status: 404 });
 
-  const { error: storageError } = await supabase.storage.from("materials").remove([material.storage_path]);
-  if (storageError) return NextResponse.json({ error: { code: "STORAGE_ERROR", message: "Material file could not be deleted." } }, { status: 500 });
+  // For gallery materials, delete all image files from storage
+  if (material.mime_type === "image/gallery") {
+    const imagePages = (material.metadata as { imagePages?: Array<{ storagePath: string }> })?.imagePages ?? [];
+    const pathsToDelete = imagePages.map((p) => p.storagePath).filter(Boolean);
+    // Also include primary storage_path as a fallback
+    if (material.storage_path && !pathsToDelete.includes(material.storage_path)) {
+      pathsToDelete.push(material.storage_path);
+    }
+    if (pathsToDelete.length > 0) {
+      const { error: storageError } = await supabase.storage.from("materials").remove(pathsToDelete);
+      if (storageError) {
+        return NextResponse.json(
+          { error: { code: "STORAGE_ERROR", message: "Gallery image files could not be deleted." } },
+          { status: 500 }
+        );
+      }
+    }
+  } else {
+    const { error: storageError } = await supabase.storage.from("materials").remove([material.storage_path]);
+    if (storageError) {
+      return NextResponse.json(
+        { error: { code: "STORAGE_ERROR", message: "Material file could not be deleted." } },
+        { status: 500 }
+      );
+    }
+  }
+
   const { error: deleteError } = await supabase.from("materials").delete().eq("id", id);
   if (deleteError) return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "Material record could not be deleted." } }, { status: 500 });
   return NextResponse.json({ ok: true });

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useRef, useId, useEffect } from 'react';
+import { useState, useRef, useId, useEffect, useCallback } from 'react';
 import { useNavigate } from '@/components/bolt/router';
 import {
   CloudUpload, MoreVertical, Trash2, Eye, Download,
-  Sparkles, Check, ChevronDown, Plus, X,
+  Sparkles, Check, ChevronDown, Plus, X, Upload,
+  AlertCircle, Loader2, CheckCircle2, FileText,
 } from 'lucide-react';
 import { Dropdown, DropdownItem, DropdownSeparator } from '@/components/ui/Dropdown';
 import { cn } from '@/lib/utils';
@@ -146,6 +147,28 @@ export function TeacherMaterials() {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadToast, setUploadToast] = useState<string | null>(null);
 
+  // Staged material selection & validation state
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedGalleryFiles, setSelectedGalleryFiles] = useState<File[]>([]);
+  const [materialTitle, setMaterialTitle] = useState('');
+  const [classValidationError, setClassValidationError] = useState<string | null>(null);
+
+  // Upload & Processing Progress Lifecycle State
+  const [uploadState, setUploadState] = useState<{
+    isUploading: boolean;
+    step: 'idle' | 'uploading' | 'processing' | 'ready' | 'failed';
+    title: string;
+    fileName: string;
+    className: string;
+    errorMessage?: string | null;
+  }>({
+    isUploading: false,
+    step: 'idle',
+    title: '',
+    fileName: '',
+    className: '',
+  });
+
   // Detail Modal state
   const [selectedMaterial, setSelectedMaterial] = useState<MaterialItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -155,13 +178,22 @@ export function TeacherMaterials() {
   const classDropdownRef = useRef<HTMLDivElement>(null);
   const sortDropdownRef = useRef<HTMLDivElement>(null);
 
-  const loadMaterials = async (classesToUse = classOptions) => {
-    const response = await fetch('/api/materials');
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload?.error?.message || 'Unable to load learning materials.');
-    const classNames = new Map(classesToUse.map((item) => [item.id, item.name]));
-    setMaterialsList((payload.materials || []).map((item: MaterialApiRecord) => mapMaterial(item, classNames)));
+  const showToast = (msg: string, duration = 5000) => {
+    setUploadToast(msg);
+    setTimeout(() => setUploadToast(null), duration);
   };
+
+  const loadMaterials = useCallback(async (classesToUse = classOptions) => {
+    try {
+      const response = await fetch('/api/materials');
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error?.message || 'Unable to load learning materials.');
+      const classNames = new Map(classesToUse.map((item) => [item.id, item.name]));
+      setMaterialsList((payload.materials || []).map((item: MaterialApiRecord) => mapMaterial(item, classNames)));
+    } catch (err) {
+      console.error('Failed to load materials:', err);
+    }
+  }, [classOptions]);
 
   useEffect(() => {
     Promise.all([
@@ -177,7 +209,20 @@ export function TeacherMaterials() {
       })
       .catch((error) => setLoadError(error instanceof Error ? error.message : 'Unable to load learning materials.'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [loadMaterials]);
+
+  // Polling: If user navigates away and returns or if any material is in 'processing' status,
+  // fetch actual material status from backend every 3 seconds until completed.
+  useEffect(() => {
+    const hasProcessing = materialsList.some((m) => m.status === 'processing');
+    if (!hasProcessing) return;
+
+    const interval = setInterval(() => {
+      loadMaterials();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [materialsList, loadMaterials]);
 
   // Handle outside click for custom dropdowns
   const handleDropdownToggle = (type: 'class' | 'sort') => {
@@ -188,6 +233,12 @@ export function TeacherMaterials() {
       setIsSortDropdownOpen((prev) => !prev);
       setIsClassDropdownOpen(false);
     }
+  };
+
+  const handleSelectClass = (classId: string) => {
+    setSelectedClassId(classId);
+    setClassValidationError(null);
+    setIsClassDropdownOpen(false);
   };
 
   // Drag & drop handlers
@@ -203,64 +254,185 @@ export function TeacherMaterials() {
     setIsDragging(false);
   };
 
+  const stageSelectedFiles = (files: FileList | File[]) => {
+    const fileList = Array.from(files).filter(Boolean);
+    if (fileList.length === 0) return;
+
+    // Check if user selected multiple image files for gallery upload
+    const allImages = fileList.every((f) => {
+      const ext = f.name.slice(f.name.lastIndexOf('.')).toLowerCase();
+      return ['.png', '.jpg', '.jpeg'].includes(ext);
+    });
+
+    if (fileList.length > 1 && allImages) {
+      if (fileList.length > 10) {
+        showToast('Maximum 10 images allowed per gallery material.');
+        return;
+      }
+      const totalSize = fileList.reduce((acc, f) => acc + f.size, 0);
+      if (totalSize > 20 * 1024 * 1024) {
+        showToast('Total size must be under 20 MB.');
+        return;
+      }
+      setSelectedGalleryFiles(fileList);
+      setSelectedFile(null);
+      const baseName = fileList[0].name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+      setMaterialTitle(`${baseName} Gallery`);
+      setClassValidationError(null);
+      return;
+    }
+
+    // Single document or image file
+    const file = fileList[0];
+    const dotIdx = file.name.lastIndexOf('.');
+    const ext = dotIdx !== -1 ? file.name.slice(dotIdx).toLowerCase() : '';
+    const allowed = ['.pdf', '.png', '.jpg', '.jpeg', '.doc', '.docx'];
+    if (!allowed.includes(ext)) {
+      showToast('Supported files are PDF, DOC, DOCX, PNG, JPG, and JPEG.');
+      return;
+    }
+
+    if (file.size > 20 * 1024 * 1024) {
+      showToast('The file must be under 20 MB.');
+      return;
+    }
+
+    setSelectedFile(file);
+    setSelectedGalleryFiles([]);
+    setMaterialTitle(file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' '));
+    setClassValidationError(null);
+  };
+
+  const clearStagedFile = () => {
+    setSelectedFile(null);
+    setSelectedGalleryFiles([]);
+    setMaterialTitle('');
+    setClassValidationError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      processUploadedFiles(e.dataTransfer.files);
+      stageSelectedFiles(e.dataTransfer.files);
     }
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      processUploadedFiles(e.target.files);
+      stageSelectedFiles(e.target.files);
     }
   };
 
-  const processUploadedFiles = async (files: FileList) => {
-    const file = files[0];
-    if (!file) return;
-
-    const dotIdx = file.name.lastIndexOf('.');
-    const ext = dotIdx !== -1 ? file.name.slice(dotIdx).toLowerCase() : '';
-    const allowed = ['.pdf', '.png', '.jpg', '.jpeg', '.doc', '.docx'];
-    if (!allowed.includes(ext)) {
-      setUploadToast('Supported files are PDF, DOC, DOCX, PNG, JPG, and JPEG.');
-      return;
-    }
+  const handleUploadMaterial = async () => {
+    if (uploadState.isUploading) return;
+    if (!selectedFile && selectedGalleryFiles.length === 0) return;
 
     if (!selectedClassId) {
-      setUploadToast('Select a class before uploading a material.');
+      const msg = 'Please select a class before uploading the material.';
+      setClassValidationError(msg);
+      showToast(msg);
       return;
     }
 
-    // Detect type
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('classId', selectedClassId);
-    formData.append('title', file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' '));
+    setClassValidationError(null);
 
-    const response = await fetch('/api/materials', { method: 'POST', body: formData });
-    const payload = await response.json();
-    if (!response.ok) {
-      setUploadToast(payload?.error?.message || 'Unable to upload material.');
-    } else {
-      if (payload.status === 'processed') {
-        setUploadToast(`"${file.name}" is ready for assessments.`);
+    const isGallery = selectedGalleryFiles.length > 0;
+    const defaultTitle = isGallery
+      ? `${selectedGalleryFiles[0].name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ')} Gallery`
+      : selectedFile!.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+    const titleToUse = materialTitle.trim() || defaultTitle;
+    const targetClass = classOptions.find((c) => c.id === selectedClassId);
+    const classNameDisplay = targetClass ? targetClass.name : 'Class';
+    const displayFileName = isGallery
+      ? `${selectedGalleryFiles.length} Images (${selectedGalleryFiles.map((f) => f.name).slice(0, 2).join(', ')}${selectedGalleryFiles.length > 2 ? '...' : ''})`
+      : selectedFile!.name;
+
+    setUploadState({
+      isUploading: true,
+      step: 'uploading',
+      title: titleToUse,
+      fileName: displayFileName,
+      className: classNameDisplay,
+    });
+
+    const processingTimer = setTimeout(() => {
+      setUploadState((prev) => (prev.step === 'uploading' ? { ...prev, step: 'processing' } : prev));
+    }, 1500);
+
+    try {
+      const formData = new FormData();
+      formData.append('classId', selectedClassId);
+      formData.append('title', titleToUse);
+
+      if (isGallery) {
+        selectedGalleryFiles.forEach((f) => formData.append('images[]', f));
       } else {
-        setUploadToast(
-          payload.errorMessage
-            ? `Processing failed: ${payload.errorMessage}`
-            : `"${file.name}" was uploaded, but processing failed.`
-        );
+        formData.append('file', selectedFile!);
       }
-      await loadMaterials();
-    }
-    setTimeout(() => setUploadToast(null), 5000);
 
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      const response = await fetch('/api/materials', {
+        method: 'POST',
+        body: formData,
+      });
+
+      clearTimeout(processingTimer);
+      const payload = await response.json();
+
+      if (!response.ok) {
+        const errorMsg = payload?.error?.message || 'Unable to upload material.';
+        setUploadState({
+          isUploading: false,
+          step: 'failed',
+          title: titleToUse,
+          fileName: displayFileName,
+          className: classNameDisplay,
+          errorMessage: errorMsg,
+        });
+        showToast(errorMsg);
+        return;
+      }
+
+      if (payload.status === 'failed') {
+        const errorMsg = payload.errorMessage || 'Processing failed: Unable to extract concepts.';
+        setUploadState({
+          isUploading: false,
+          step: 'failed',
+          title: titleToUse,
+          fileName: displayFileName,
+          className: classNameDisplay,
+          errorMessage: errorMsg,
+        });
+        showToast(errorMsg);
+      } else {
+        setUploadState({
+          isUploading: false,
+          step: 'ready',
+          title: titleToUse,
+          fileName: displayFileName,
+          className: classNameDisplay,
+        });
+        showToast(`"${titleToUse}" is ready for assessments.`);
+        clearStagedFile();
+      }
+
+      await loadMaterials();
+    } catch {
+      clearTimeout(processingTimer);
+      const errorMsg = 'Upload failed. Please try again.';
+      setUploadState({
+        isUploading: false,
+        step: 'failed',
+        title: titleToUse,
+        fileName: displayFileName,
+        className: classNameDisplay,
+        errorMessage: errorMsg,
+      });
+      showToast(errorMsg);
     }
   };
 
@@ -327,123 +499,424 @@ export function TeacherMaterials() {
 
       {/* Top Upload Section (Two Columns) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-        {/* Left Column: Large Drag-and-Drop Area (~72%) */}
-        <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={cn(
-            'lg:col-span-8 rounded-2xl border-2 border-dashed p-8 sm:p-10 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-200 select-none bg-white',
-            isDragging
-              ? 'border-brand-500 bg-brand-50/40 ring-4 ring-brand-500/10'
-              : 'border-[#99f6e4] hover:border-brand-400 hover:bg-[#f0fdfa]/30'
-          )}
-        >
-          <input
-            ref={fileInputRef}
-            id={fileInputId}
-            type="file"
-            accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,application/pdf,image/png,image/jpeg,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            className="hidden"
-            onChange={handleFileInputChange}
-          />
+        {/* Hidden File Input */}
+        <input
+          ref={fileInputRef}
+          id={fileInputId}
+          type="file"
+          multiple
+          accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,application/pdf,image/png,image/jpeg,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          className="hidden"
+          onChange={handleFileInputChange}
+        />
 
-          <div className="mb-3 text-[#0d9488]">
-            <CloudUpload className="h-11 w-11 stroke-[1.75]" />
-          </div>
+        {/* Left Column (~72% on desktop) */}
+        {uploadState.step !== 'idle' ? (
+          /* State 1: Active Upload & Processing Progress Card */
+          <div className="lg:col-span-8 rounded-2xl border border-slate-200/90 bg-white p-6 sm:p-7 flex flex-col justify-between shadow-soft transition-all duration-200">
+            <div className="space-y-5">
+              {/* Header with Title, File Name & Status */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                      {uploadState.className}
+                    </span>
+                    <span className="text-xs text-slate-400 truncate max-w-[200px] sm:max-w-xs">
+                      {uploadState.fileName}
+                    </span>
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900 mt-1 truncate">
+                    {uploadState.title}
+                  </h3>
+                </div>
 
-          <h3 className="text-base font-bold text-slate-800 tracking-tight">
-            Drag and drop a file here
-          </h3>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5 mb-5 font-normal">
-            or choose a file from your device
-          </p>
-
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              fileInputRef.current?.click();
-            }}
-            className="h-10 px-7 rounded-xl bg-[#0d9488] hover:bg-[#0f766e] active:bg-[#115e59] text-white font-medium text-sm shadow-xs transition-colors"
-          >
-            Choose File
-          </button>
-
-          <p className="text-xs text-slate-400 mt-5 font-normal">
-            PDF, DOC, DOCX, PNG, JPG, JPEG · Max 20 MB
-          </p>
-        </div>
-
-        {/* Right Column: Add to Class Dropdown Card (~28%) */}
-        <div className="lg:col-span-4 rounded-2xl border border-slate-200/80 bg-white p-6 flex flex-col justify-start shadow-xs">
-          <label htmlFor="select-class-btn" className="block text-sm font-bold text-slate-900 mb-3">
-            Add to class
-          </label>
-
-          <div className="relative" ref={classDropdownRef}>
-            <button
-              id="select-class-btn"
-              type="button"
-              onClick={() => handleDropdownToggle('class')}
-              className={cn(
-                'w-full h-11 px-3.5 rounded-xl border bg-white text-sm text-left flex items-center justify-between transition-all duration-150',
-                isClassDropdownOpen
-                  ? 'border-brand-500 ring-2 ring-brand-500/20'
-                  : 'border-slate-200 hover:border-slate-300'
-              )}
-            >
-              <span className={selectedClass ? 'text-slate-900 font-medium' : 'text-slate-500'}>
-                {selectedClass ? (selectedClass.name.startsWith('Class') ? selectedClass.name : `Class ${selectedClass.name}`) : 'Select a class'}
-              </span>
-              <ChevronDown
-                className={cn(
-                  'h-4 w-4 text-slate-400 transition-transform duration-200',
-                  isClassDropdownOpen && 'rotate-180 text-brand-600'
+                {uploadState.step === 'ready' && (
+                  <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5 shrink-0">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                    Ready
+                  </span>
                 )}
-              />
-            </button>
+                {uploadState.step === 'failed' && (
+                  <span className="px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 flex items-center gap-1.5 shrink-0">
+                    <AlertCircle className="h-3.5 w-3.5 text-rose-600" />
+                    Failed
+                  </span>
+                )}
+              </div>
 
-            {/* Dropdown Options */}
-            {isClassDropdownOpen && (
-              <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-56 overflow-y-auto py-1 animate-scale-in">
+              {/* Status Stepper: Uploading → Processing material → Ready */}
+              <div className="p-4 rounded-xl bg-slate-50/80 border border-slate-200/60">
+                <div className="flex items-center justify-between sm:justify-start sm:gap-6 text-xs font-semibold">
+                  {/* Step 1: Uploading */}
+                  <div
+                    className={cn(
+                      'flex items-center gap-1.5',
+                      uploadState.step === 'uploading'
+                        ? 'text-teal-700 font-bold'
+                        : uploadState.step === 'processing' || uploadState.step === 'ready'
+                        ? 'text-emerald-700 font-medium'
+                        : 'text-slate-500'
+                    )}
+                  >
+                    {uploadState.step === 'uploading' ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-teal-600 shrink-0" />
+                    ) : uploadState.step === 'processing' || uploadState.step === 'ready' ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                    ) : (
+                      <span className="h-4 w-4 rounded-full border border-slate-300 flex items-center justify-center text-[10px]">
+                        1
+                      </span>
+                    )}
+                    <span>Uploading</span>
+                  </div>
+
+                  <span className="text-slate-300">→</span>
+
+                  {/* Step 2: Processing material */}
+                  <div
+                    className={cn(
+                      'flex items-center gap-1.5',
+                      uploadState.step === 'processing'
+                        ? 'text-teal-700 font-bold'
+                        : uploadState.step === 'ready'
+                        ? 'text-emerald-700 font-medium'
+                        : uploadState.step === 'failed'
+                        ? 'text-rose-600 font-bold'
+                        : 'text-slate-400'
+                    )}
+                  >
+                    {uploadState.step === 'processing' ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-teal-600 shrink-0" />
+                    ) : uploadState.step === 'ready' ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                    ) : uploadState.step === 'failed' ? (
+                      <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+                    ) : (
+                      <span className="h-4 w-4 rounded-full border border-slate-300 flex items-center justify-center text-[10px]">
+                        2
+                      </span>
+                    )}
+                    <span>Processing material</span>
+                  </div>
+
+                  <span className="text-slate-300">→</span>
+
+                  {/* Step 3: Ready */}
+                  <div
+                    className={cn(
+                      'flex items-center gap-1.5',
+                      uploadState.step === 'ready'
+                        ? 'text-emerald-700 font-bold'
+                        : uploadState.step === 'failed'
+                        ? 'text-rose-600 font-bold'
+                        : 'text-slate-400'
+                    )}
+                  >
+                    {uploadState.step === 'ready' ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                    ) : uploadState.step === 'failed' ? (
+                      <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+                    ) : (
+                      <span className="h-4 w-4 rounded-full border border-slate-300 flex items-center justify-center text-[10px]">
+                        3
+                      </span>
+                    )}
+                    <span>{uploadState.step === 'failed' ? 'Failed' : 'Ready'}</span>
+                  </div>
+                </div>
+
+                {/* Indeterminate Progress Bar */}
+                <div className="mt-4">
+                  {uploadState.step === 'uploading' || uploadState.step === 'processing' ? (
+                    <div className="w-full h-2 bg-slate-200/80 rounded-full overflow-hidden relative">
+                      <div className="h-full bg-teal-600 rounded-full animate-indeterminate-progress" />
+                    </div>
+                  ) : uploadState.step === 'ready' ? (
+                    <div className="w-full h-2 bg-emerald-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-emerald-500 rounded-full w-full" />
+                    </div>
+                  ) : (
+                    <div className="w-full h-2 bg-rose-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-rose-500 rounded-full w-full" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Status Description Text */}
+                <p className="text-xs text-slate-500 mt-2.5 font-medium">
+                  {uploadState.step === 'uploading' && 'Sending file to server storage...'}
+                  {uploadState.step === 'processing' && 'AI is extracting key concepts and generating assessment metadata...'}
+                  {uploadState.step === 'ready' && 'Material has been processed and is ready to generate assessments!'}
+                  {uploadState.step === 'failed' && (uploadState.errorMessage || 'Unable to process material.')}
+                </p>
+              </div>
+            </div>
+
+            {/* Footer Actions when Complete or Failed */}
+            {(uploadState.step === 'ready' || uploadState.step === 'failed') && (
+              <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => {
-                    setSelectedClassId('');
-                    setIsClassDropdownOpen(false);
+                    setUploadState({
+                      isUploading: false,
+                      step: 'idle',
+                      title: '',
+                      fileName: '',
+                      className: '',
+                    });
                   }}
-                  className={cn(
-                    'w-full px-3.5 py-2.5 text-left text-sm flex items-center justify-between transition-colors',
-                    !selectedClassId ? 'bg-brand-50 text-brand-700 font-semibold' : 'text-slate-700 hover:bg-slate-50'
-                  )}
+                  className="h-10 px-5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs shadow-xs transition-colors"
                 >
-                  <span>Select a class (Default)</span>
-                  {!selectedClassId && <Check className="h-4 w-4 text-brand-600" />}
+                  {uploadState.step === 'ready' ? 'Upload Another Material' : 'Try Again'}
                 </button>
-                {classOptions.map((c) => {
-                  const isSelected = selectedClassId === c.id;
-                  const label = c.name.startsWith('Class') ? c.name : `Class ${c.name}`;
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedClassId(c.id);
-                        setIsClassDropdownOpen(false);
-                      }}
-                      className={cn(
-                        'w-full px-3.5 py-2.5 text-left text-sm flex items-center justify-between transition-colors',
-                        isSelected ? 'bg-brand-50 text-brand-700 font-semibold' : 'text-slate-700 hover:bg-slate-50'
-                      )}
-                    >
-                      <span>{label}</span>
-                      {isSelected && <Check className="h-4 w-4 text-brand-600" />}
-                    </button>
-                  );
-                })}
               </div>
+            )}
+          </div>
+        ) : selectedFile || selectedGalleryFiles.length > 0 ? (
+          /* State 2: Staged Document / Image Card with "Upload Material" Button */
+          <div className="lg:col-span-8 rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50/40 via-white to-slate-50 p-6 sm:p-7 flex flex-col justify-between shadow-xs transition-all duration-200">
+            <div className="space-y-4">
+              {/* File Info Header */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  {selectedGalleryFiles.length > 0 ? (
+                    <div className="w-11 h-11 rounded-xl bg-teal-100 border border-teal-200 flex items-center justify-center flex-shrink-0 text-teal-800 font-bold text-xs">
+                      {selectedGalleryFiles.length} img
+                    </div>
+                  ) : (
+                    <div className="w-11 h-11 rounded-xl bg-teal-100 border border-teal-200 flex items-center justify-center flex-shrink-0 text-teal-700">
+                      <FileText className="h-6 w-6 stroke-[1.75]" />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-900 truncate">
+                      {selectedGalleryFiles.length > 0
+                        ? `Gallery (${selectedGalleryFiles.length} images)`
+                        : selectedFile?.name}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5 font-normal">
+                      {selectedGalleryFiles.length > 0
+                        ? `${formatFileSize(selectedGalleryFiles.reduce((acc, f) => acc + f.size, 0))} · Selected`
+                        : `${formatFileSize(selectedFile?.size || 0)} · Selected`}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={clearStagedFile}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors flex items-center gap-1 shrink-0"
+                  title="Remove selected file"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  <span>Change</span>
+                </button>
+              </div>
+
+              {/* Material Title Field */}
+              <div>
+                <label htmlFor="material-title-input" className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Material Title
+                </label>
+                <input
+                  id="material-title-input"
+                  type="text"
+                  value={materialTitle}
+                  onChange={(e) => setMaterialTitle(e.target.value)}
+                  placeholder="Enter a descriptive title for this material"
+                  className="w-full h-11 px-3.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all"
+                />
+              </div>
+
+              {/* Validation Message if attempted upload without selecting a class */}
+              {classValidationError && (
+                <div
+                  className="flex items-center gap-2 p-3 text-xs sm:text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-xl animate-fade-in"
+                  role="alert"
+                >
+                  <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+                  <span className="font-medium">{classValidationError}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Upload Material Button & Class Association */}
+            <div className="mt-5 pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div className="text-xs text-slate-500 flex items-center gap-1.5">
+                {selectedClass ? (
+                  <span className="text-emerald-700 font-medium flex items-center gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                    Assigning to <strong className="font-semibold">{selectedClass.name.startsWith('Class') ? selectedClass.name : `Class ${selectedClass.name}`}</strong>
+                  </span>
+                ) : (
+                  <span className="text-slate-500">
+                    Select a class on the right before or after choosing your file.
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                id="upload-material-btn"
+                onClick={handleUploadMaterial}
+                disabled={uploadState.isUploading}
+                className={cn(
+                  'w-full sm:w-auto h-11 px-7 rounded-xl font-medium text-sm shadow-xs transition-colors flex items-center justify-center gap-2',
+                  'bg-[#0d9488] hover:bg-[#0f766e] active:bg-[#115e59] text-white',
+                  uploadState.isUploading && 'opacity-60 cursor-not-allowed'
+                )}
+              >
+                {uploadState.isUploading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Uploading...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4" />
+                    <span>Upload Material</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* State 3: Empty Drag-and-Drop Area */
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={cn(
+              'lg:col-span-8 rounded-2xl border-2 border-dashed p-8 sm:p-10 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-200 select-none bg-white',
+              isDragging
+                ? 'border-brand-500 bg-brand-50/40 ring-4 ring-brand-500/10'
+                : 'border-[#99f6e4] hover:border-brand-400 hover:bg-[#f0fdfa]/30'
+            )}
+          >
+            <div className="mb-3 text-[#0d9488]">
+              <CloudUpload className="h-11 w-11 stroke-[1.75]" />
+            </div>
+
+            <h3 className="text-base font-bold text-slate-800 tracking-tight">
+              Drag and drop a file here
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-500 mt-0.5 mb-5 font-normal">
+              or choose a file from your device
+            </p>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                fileInputRef.current?.click();
+              }}
+              className="h-10 px-7 rounded-xl bg-[#0d9488] hover:bg-[#0f766e] active:bg-[#115e59] text-white font-medium text-sm shadow-xs transition-colors"
+            >
+              Choose File
+            </button>
+
+            <p className="text-xs text-slate-400 mt-5 font-normal">
+              PDF, DOC, DOCX, PNG, JPG, JPEG · Max 20 MB
+            </p>
+          </div>
+        )}
+
+        {/* Right Column: Add to Class Dropdown Card (~28%) */}
+        <div
+          className={cn(
+            'lg:col-span-4 rounded-2xl border bg-white p-6 flex flex-col justify-between shadow-xs transition-all duration-150',
+            classValidationError
+              ? 'border-rose-300 ring-2 ring-rose-500/10'
+              : 'border-slate-200/80'
+          )}
+        >
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <label htmlFor="select-class-btn" className="block text-sm font-bold text-slate-900">
+                Add to class
+              </label>
+              {selectedClass && (
+                <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200/60">
+                  Selected
+                </span>
+              )}
+            </div>
+
+            <div className="relative" ref={classDropdownRef}>
+              <button
+                id="select-class-btn"
+                type="button"
+                disabled={uploadState.isUploading}
+                onClick={() => handleDropdownToggle('class')}
+                className={cn(
+                  'w-full h-11 px-3.5 rounded-xl border bg-white text-sm text-left flex items-center justify-between transition-all duration-150',
+                  classValidationError
+                    ? 'border-rose-400 ring-2 ring-rose-400/20'
+                    : isClassDropdownOpen
+                    ? 'border-brand-500 ring-2 ring-brand-500/20'
+                    : 'border-slate-200 hover:border-slate-300',
+                  uploadState.isUploading && 'opacity-60 cursor-not-allowed'
+                )}
+              >
+                <span className={selectedClass ? 'text-slate-900 font-medium' : 'text-slate-500'}>
+                  {selectedClass
+                    ? selectedClass.name.startsWith('Class')
+                      ? selectedClass.name
+                      : `Class ${selectedClass.name}`
+                    : 'Select a class'}
+                </span>
+                <ChevronDown
+                  className={cn(
+                    'h-4 w-4 text-slate-400 transition-transform duration-200',
+                    isClassDropdownOpen && 'rotate-180 text-brand-600'
+                  )}
+                />
+              </button>
+
+              {/* Dropdown Options */}
+              {isClassDropdownOpen && (
+                <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-56 overflow-y-auto py-1 animate-scale-in">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectClass('')}
+                    className={cn(
+                      'w-full px-3.5 py-2.5 text-left text-sm flex items-center justify-between transition-colors',
+                      !selectedClassId ? 'bg-brand-50 text-brand-700 font-semibold' : 'text-slate-700 hover:bg-slate-50'
+                    )}
+                  >
+                    <span>Select a class</span>
+                    {!selectedClassId && <Check className="h-4 w-4 text-brand-600" />}
+                  </button>
+                  {classOptions.map((c) => {
+                    const isSelected = selectedClassId === c.id;
+                    const label = c.name.startsWith('Class') ? c.name : `Class ${c.name}`;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => handleSelectClass(c.id)}
+                        className={cn(
+                          'w-full px-3.5 py-2.5 text-left text-sm flex items-center justify-between transition-colors',
+                          isSelected ? 'bg-brand-50 text-brand-700 font-semibold' : 'text-slate-700 hover:bg-slate-50'
+                        )}
+                      >
+                        <span>{label}</span>
+                        {isSelected && <Check className="h-4 w-4 text-brand-600" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {classValidationError && (
+              <p className="text-xs text-rose-600 font-medium mt-2 flex items-center gap-1.5 animate-fade-in">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <span>{classValidationError}</span>
+              </p>
             )}
           </div>
 
@@ -510,7 +983,7 @@ export function TeacherMaterials() {
             sortedMaterials.map((m) => (
               <div
                 key={m.id}
-                className="group rounded-2xl border border-slate-200/80 bg-white p-3.5 sm:p-4 hover:border-slate-300 hover:shadow-soft transition-all duration-150 flex items-center justify-between gap-3 sm:gap-4"
+                className="group rounded-2xl border border-slate-200/80 bg-white p-3.5 sm:p-4 hover:border-slate-300 hover:shadow-soft transition-all duration-150 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 relative overflow-hidden"
               >
                 {/* Left Group: Icon + Title & File info */}
                 <div className="flex items-center gap-3.5 min-w-0 flex-1">
@@ -520,20 +993,20 @@ export function TeacherMaterials() {
                     <h3 className="text-sm font-bold text-slate-900 truncate group-hover:text-brand-700 transition-colors">
                       {m.title}
                     </h3>
-                    <p className="text-xs text-slate-400 mt-0.5 font-normal">
+                    <p className="text-xs text-slate-400 mt-0.5 font-normal truncate">
                       {m.fileSize} · Uploaded {new Date(m.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                     </p>
                   </div>
                 </div>
 
                 {/* Right Group: Class Badge + Status Badge + Time Ago + Action Menu */}
-                <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0">
+                <div className="flex items-center gap-2.5 sm:gap-4 flex-wrap sm:flex-nowrap justify-between sm:justify-end flex-shrink-0">
                   {/* Class Badge */}
                   <span className="px-3 py-1 rounded-full text-xs font-medium bg-[#f0fdfa] text-[#0f766e] border border-[#ccfbf1] whitespace-nowrap">
                     {m.displayClass}
                   </span>
 
-                  {/* Status Pill (Strictly 2 statuses: Ready & Processing) */}
+                  {/* Status Pill (Ready, Failed, Processing) */}
                   {m.status === 'ready' ? (
                     <span className="px-3 py-1 rounded-full text-xs font-medium bg-[#f0fdf4] text-[#15803d] border border-[#bbf7d0]/60 flex items-center gap-1.5 whitespace-nowrap">
                       <span className="h-1.5 w-1.5 rounded-full bg-[#16a34a]" />
@@ -546,13 +1019,13 @@ export function TeacherMaterials() {
                     </span>
                   ) : (
                     <span className="px-3 py-1 rounded-full text-xs font-medium bg-[#eff6ff] text-[#1d4ed8] border border-[#bfdbfe]/60 flex items-center gap-1.5 whitespace-nowrap">
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#2563eb] animate-pulse" />
+                      <Loader2 className="h-3.5 w-3.5 text-blue-600 animate-spin" />
                       Processing
                     </span>
                   )}
 
                   {/* Relative Time */}
-                  <span className="text-xs text-slate-400 min-w-[70px] text-right hidden sm:block">
+                  <span className="text-xs text-slate-400 min-w-[65px] text-right hidden sm:block">
                     {m.timeAgo}
                   </span>
 
@@ -598,6 +1071,13 @@ export function TeacherMaterials() {
                     </DropdownItem>
                   </Dropdown>
                 </div>
+
+                {/* Indeterminate bottom progress bar when material is processing */}
+                {m.status === 'processing' && (
+                  <div className="absolute inset-x-0 bottom-0 h-1 bg-blue-100 overflow-hidden">
+                    <div className="h-full bg-blue-600 rounded-full animate-indeterminate-progress" />
+                  </div>
+                )}
               </div>
             ))
           )}

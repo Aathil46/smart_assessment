@@ -16,12 +16,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { data: questions } = await admin.from("questions").select("*").eq("assessment_id", id);
     if (!assessment || assessment.status !== "draft") return NextResponse.json({ error: { code: "FORBIDDEN", message: "Only draft assessments can be published." } }, { status: 403 });
     if (!questions?.length || questions.some((question) => questionSchema.safeParse({ ...question, assessmentId: id, correctAnswer: question.correct_answer }).success === false)) return NextResponse.json({ error: { code: "INVALID_QUESTIONS", message: "Every question must be valid before publishing." } }, { status: 400 });
-    const { error } = await admin.from("assessments").update({
-      opens_at: payload.opensAt ?? null,
-      closes_at: payload.closesAt ?? null,
+    const updatePayload: Record<string, any> = {
       attempt_limit: payload.attemptLimit,
       status: "published",
-    }).eq("id", id);
+    };
+    if (payload.opensAt !== undefined) {
+      updatePayload.opens_at = payload.opensAt;
+    }
+    if (payload.closesAt !== undefined) {
+      updatePayload.closes_at = payload.closesAt;
+    }
+    const { error } = await admin.from("assessments").update(updatePayload).eq("id", id);
     if (error) throw new Error(error.message);
     return NextResponse.json({ status: "published" });
   } catch (error) {

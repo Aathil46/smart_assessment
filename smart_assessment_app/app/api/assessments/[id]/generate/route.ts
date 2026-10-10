@@ -2,9 +2,23 @@ import { NextResponse } from "next/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { generateAssessmentQuestions } from "@/lib/gemini/assessment";
+import { getTeacherGeminiApiKey } from "@/lib/gemini/teacher-credentials";
 
-export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  let instructions: string | undefined;
+  try {
+    const body = await request.json().catch(() => null);
+    if (body) {
+      const raw = body.instructions || body.additionalInstructions;
+      if (typeof raw === "string" && raw.trim()) {
+        instructions = raw.trim();
+      }
+    }
+  } catch {
+    // Instructions are optional
+  }
+
   const supabase = await createServerSupabaseClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Please log in." } }, { status: 401 });
@@ -14,7 +28,15 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
   const material = Array.isArray(assessment.materials) ? assessment.materials[0] : assessment.materials;
   if (!material || material.status !== "processed" || !material.extracted_text) return NextResponse.json({ error: { code: "INVALID_MATERIAL", message: "Material is not ready." } }, { status: 400 });
   try {
-    const questions = await generateAssessmentQuestions({ topic: assessment.topic, difficulty: assessment.difficulty, count: assessment.num_questions, material: material.extracted_text });
+    const apiKey = await getTeacherGeminiApiKey(auth.user.id);
+    const questions = await generateAssessmentQuestions({
+      topic: assessment.topic,
+      difficulty: assessment.difficulty,
+      count: assessment.num_questions,
+      material: material.extracted_text,
+      instructions,
+      apiKey,
+    });
     await admin.from("questions").delete().eq("assessment_id", id);
     const { error } = await admin.from("questions").insert(questions.map((question) => ({
       assessment_id: id,

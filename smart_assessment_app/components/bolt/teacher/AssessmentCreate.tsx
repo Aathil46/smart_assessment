@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from '@/components/bolt/router';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -13,8 +13,10 @@ import {
   Check, ChevronRight, ChevronLeft, Sparkles, FileText,
   ClipboardPen, Clock, Award, Eye, Send, Plus, Trash2,
   Edit3, CheckCircle2, AlertCircle, SlidersHorizontal, Minus,
+  Calendar,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { validateSchedule } from '@/lib/scheduling';
 
 interface RealClass {
   id: string;
@@ -48,7 +50,20 @@ export function AssessmentCreate() {
   const [step, setStep] = useState(0);
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedMaterial, setSelectedMaterial] = useState('');
-  const [config, setConfig] = useState({ title: '', questionCount: 10, duration: 45, passingScore: 70, difficulty: 'mixed' as 'easy' | 'medium' | 'hard' | 'mixed' });
+  const [config, setConfig] = useState({
+    title: '',
+    questionCount: 10,
+    duration: 45,
+    passingScore: 70,
+    difficulty: 'mixed' as 'easy' | 'medium' | 'hard' | 'mixed',
+    additionalInstructions: '',
+    startDate: '',
+    endDate: '',
+  });
+
+  const scheduleValidation = useMemo(() => {
+    return validateSchedule(config.startDate, config.endDate);
+  }, [config.startDate, config.endDate]);
   const [isCustomDuration, setIsCustomDuration] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [genStep, setGenStep] = useState(0);
@@ -158,6 +173,8 @@ export function AssessmentCreate() {
           topic: config.title.trim(),
           numQuestions: count,
           difficulty: diff,
+          opensAt: config.startDate ? new Date(config.startDate).toISOString() : null,
+          closesAt: config.endDate ? new Date(config.endDate).toISOString() : null,
         }),
       });
 
@@ -173,6 +190,10 @@ export function AssessmentCreate() {
       // 2. Call backend AI generation endpoint
       const genRes = await fetch(`/api/assessments/${assessmentId}/generate`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instructions: config.additionalInstructions?.trim() || undefined,
+        }),
       });
 
       if (!genRes.ok) {
@@ -221,6 +242,8 @@ export function AssessmentCreate() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           attemptLimit: 1,
+          opensAt: config.startDate ? new Date(config.startDate).toISOString() : null,
+          closesAt: config.endDate ? new Date(config.endDate).toISOString() : null,
         }),
       });
       if (!res.ok) {
@@ -281,7 +304,7 @@ export function AssessmentCreate() {
     switch (step) {
       case 0: return !!selectedClass;
       case 1: return !!selectedMaterial;
-      case 2: return !!config.title;
+      case 2: return !!config.title && scheduleValidation.valid;
       case 3: return generated;
       case 4: return questions.length > 0;
       default: return true;
@@ -639,6 +662,66 @@ export function AssessmentCreate() {
                   </p>
                 </div>
               </div>
+
+              {/* Assessment Schedule (Optional) */}
+              <div className="pt-2 border-t border-slate-100">
+                <div className="flex items-center gap-2 mb-1">
+                  <Calendar className="h-4 w-4 text-[#0d9488]" />
+                  <label className="block text-sm font-bold text-slate-900">
+                    Assessment Schedule (Optional)
+                  </label>
+                </div>
+                <p className="text-xs text-slate-500 mb-3.5">
+                  Optionally schedule when this assessment opens and closes for students. Leave blank for unscheduled (available anytime).
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Start Date &amp; Time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={config.startDate}
+                      onChange={(e) => setConfig({ ...config, startDate: e.target.value })}
+                      className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-800 focus:outline-none focus:border-[#0d9488] focus:ring-2 focus:ring-[#0d9488]/20 transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      End Date &amp; Time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={config.endDate}
+                      onChange={(e) => setConfig({ ...config, endDate: e.target.value })}
+                      className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-800 focus:outline-none focus:border-[#0d9488] focus:ring-2 focus:ring-[#0d9488]/20 transition-all"
+                    />
+                  </div>
+                </div>
+
+                {!scheduleValidation.valid && scheduleValidation.error && (
+                  <p className="text-xs text-red-500 font-medium mt-2 flex items-center gap-1.5">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                    <span>{scheduleValidation.error}</span>
+                  </p>
+                )}
+              </div>
+
+              {/* Additional Instructions (Optional) */}
+              <div>
+                <label className="block text-sm font-bold text-slate-900 mb-2">
+                  Additional Instructions (Optional)
+                </label>
+                <textarea
+                  rows={3}
+                  value={config.additionalInstructions}
+                  onChange={(e) => setConfig({ ...config, additionalInstructions: e.target.value })}
+                  placeholder="Enter any instructions for the AI..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#0d9488] focus:ring-2 focus:ring-[#0d9488]/20 transition-all resize-y min-h-[84px]"
+                />
+              </div>
             </div>
           )}
 
@@ -781,10 +864,23 @@ export function AssessmentCreate() {
                     <div className="text-center"><Clock className="h-4 w-4 text-slate-400 mx-auto mb-1" /><p className="text-sm font-bold text-slate-900">{config.duration}m</p><p className="text-2xs text-slate-400">Duration</p></div>
                     <div className="text-center"><Award className="h-4 w-4 text-slate-400 mx-auto mb-1" /><p className="text-sm font-bold text-slate-900">{config.passingScore}%</p><p className="text-2xs text-slate-400">Passing</p></div>
                   </div>
+                  {config.startDate && (
+                    <div className="mt-3 pt-3 border-t border-slate-200 flex items-center gap-2 text-xs text-slate-600">
+                      <Calendar className="h-3.5 w-3.5 text-[#0d9488] shrink-0" />
+                      <span>
+                        Starts: {new Date(config.startDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        {config.endDate ? ` · Ends: ${new Date(config.endDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}` : ''}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-accent-50 border border-accent-200">
-                  <Sparkles className="h-4 w-4 text-accent-500" />
-                  <span className="text-xs text-accent-700">Once published, students will be notified and can begin taking the assessment immediately.</span>
+                  <Sparkles className="h-4 w-4 text-accent-500 shrink-0" />
+                  <span className="text-xs text-accent-700">
+                    {config.startDate
+                      ? "Students will be able to start taking this assessment once the scheduled start time arrives."
+                      : "Once published, students will be notified and can begin taking the assessment immediately."}
+                  </span>
                 </div>
               </div>
             </div>

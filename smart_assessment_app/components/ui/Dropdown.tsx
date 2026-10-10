@@ -8,9 +8,10 @@ interface DropdownProps {
   children: ReactNode;
   align?: 'left' | 'right';
   className?: string;
+  closeOnClick?: boolean;
 }
 
-export function Dropdown({ trigger, children, align = 'right', className }: DropdownProps) {
+export function Dropdown({ trigger, children, align = 'right', className, closeOnClick = true }: DropdownProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -36,7 +37,7 @@ export function Dropdown({ trigger, children, align = 'right', className }: Drop
             align === 'right' ? 'right-0 origin-top-right' : 'left-0 origin-top-left',
             className
           )}
-          onClick={() => setTimeout(() => setOpen(false), 100)}
+          onClick={closeOnClick ? () => setTimeout(() => setOpen(false), 100) : undefined}
         >
           {children}
         </div>

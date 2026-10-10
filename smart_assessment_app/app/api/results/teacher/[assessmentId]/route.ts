@@ -52,7 +52,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ assessment
   if (studentIds.length > 0) {
     const { data: profilesData } = await admin
       .from("profiles")
-      .select("id, name")
+      .select("id, name, roll_number")
       .in("id", studentIds);
     studentProfiles = profilesData ?? [];
   }

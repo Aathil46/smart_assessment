@@ -282,3 +282,87 @@ describe("Gemini Multimodal Image Processing & Normalization", () => {
     }
   });
 });
+
+describe("Multi-Image Gallery Material Data Structure & Ordering", () => {
+  it("preserves sequential order of images in imagePages metadata", () => {
+    const rawFiles = [
+      { name: "diagram_page_1.png", size: 1024, mime: "image/png" },
+      { name: "diagram_page_2.jpg", size: 2048, mime: "image/jpeg" },
+      { name: "diagram_page_3.jpeg", size: 1536, mime: "image/jpeg" },
+    ];
+
+    const imagePages = rawFiles.map((file, idx) => ({
+      index: idx,
+      storagePath: `materials/teacher-1/class-1/page_${idx + 1}.png`,
+      originalName: file.name,
+      mimeType: file.mime,
+    }));
+
+    // Verify ordering
+    expect(imagePages).toHaveLength(3);
+    expect(imagePages[0].index).toBe(0);
+    expect(imagePages[0].originalName).toBe("diagram_page_1.png");
+    expect(imagePages[1].index).toBe(1);
+    expect(imagePages[1].originalName).toBe("diagram_page_2.jpg");
+    expect(imagePages[2].index).toBe(2);
+    expect(imagePages[2].originalName).toBe("diagram_page_3.jpeg");
+
+    // Construct gallery metadata object
+    const galleryMetadata = {
+      fileType: "image_gallery",
+      imagePages,
+      pageCount: imagePages.length,
+      aiSummary: {
+        title: "Photosynthesis Overview",
+        topic: "Biology",
+        summary: "Multi-page visual breakdown of light and dark reactions.",
+        extractedText: "[Page 1]\nLight reactions in thylakoid.\n\n[Page 2]\nCalvin cycle in stroma.\n\n[Page 3]\nSummary diagram.",
+        concepts: [
+          { name: "Thylakoid", accuracy: 0.92 },
+          { name: "Calvin Cycle", accuracy: 0.88 },
+        ],
+      },
+      chunkCount: imagePages.length,
+      truncated: false,
+    };
+
+    expect(galleryMetadata.pageCount).toBe(3);
+    expect(galleryMetadata.imagePages[0].storagePath).toContain("page_1");
+    expect(galleryMetadata.imagePages[2].storagePath).toContain("page_3");
+    expect(galleryMetadata.aiSummary.extractedText).toContain("[Page 1]");
+    expect(galleryMetadata.aiSummary.extractedText).toContain("[Page 3]");
+  });
+
+  it("verifies single material card representation with page count badge", () => {
+    const materialRecord = {
+      id: "mat-gallery-123",
+      title: "Photosynthesis Diagram Set",
+      file_name: "Photosynthesis_Diagram_Set.gallery",
+      mime_type: "image/gallery",
+      size_bytes: 4608,
+      status: "processed",
+      page_count: 4,
+      metadata: {
+        fileType: "image_gallery",
+        pageCount: 4,
+        imagePages: [
+          { index: 0, storagePath: "path1", originalName: "p1.png", mimeType: "image/png" },
+          { index: 1, storagePath: "path2", originalName: "p2.png", mimeType: "image/png" },
+          { index: 2, storagePath: "path3", originalName: "p3.png", mimeType: "image/png" },
+          { index: 3, storagePath: "path4", originalName: "p4.png", mimeType: "image/png" },
+        ],
+      },
+    };
+
+    // Card representation logic
+    const isGallery = materialRecord.mime_type === "image/gallery";
+    const displayLabel = isGallery
+      ? `${materialRecord.title} — ${materialRecord.page_count} pages`
+      : materialRecord.title;
+
+    expect(isGallery).toBe(true);
+    expect(displayLabel).toBe("Photosynthesis Diagram Set — 4 pages");
+    expect(materialRecord.metadata.imagePages).toHaveLength(4);
+  });
+});
+

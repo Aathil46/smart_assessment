@@ -3,6 +3,7 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { evaluateAttempt } from "@/lib/conceptEngine";
 import { explainGap } from "@/lib/gemini/gaps";
+import { calculateEffectiveDeadline } from "@/lib/scheduling";
 
 export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -19,7 +20,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
   const admin = createAdminSupabaseClient();
   const { data: attempt } = await admin
     .from("attempts")
-    .select("*")
+    .select("*, assessments(closes_at, num_questions)")
     .eq("id", id)
     .eq("student_id", auth.user.id)
     .single();
@@ -52,8 +53,20 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       .eq("question_id", evaluated.questionId);
   }
 
-  // Lock attempt with score and timestamp
-  const submittedAt = attempt.submitted_at ?? new Date().toISOString();
+  const rawAss = (attempt as any)?.assessments;
+  const assessment = Array.isArray(rawAss) ? rawAss[0] : rawAss;
+  const qCount = questions?.length || assessment?.num_questions || 10;
+  const durationMinutes = (assessment as any)?.duration_minutes || Math.max(5, qCount * 3);
+  const effectiveDeadline = calculateEffectiveDeadline(
+    attempt.started_at,
+    durationMinutes,
+    assessment?.closes_at
+  );
+
+  // Lock attempt with score and timestamp (capped at effective deadline)
+  const now = Date.now();
+  const cappedTime = isNaN(effectiveDeadline) ? now : Math.min(now, effectiveDeadline);
+  const submittedAt = attempt.submitted_at ?? new Date(cappedTime).toISOString();
   await admin
     .from("attempts")
     .update({

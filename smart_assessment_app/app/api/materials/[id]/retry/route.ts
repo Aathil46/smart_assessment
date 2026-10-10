@@ -5,6 +5,7 @@ import path from "path";
 import { NextResponse } from "next/server";
 
 import { generateMaterialSummary } from "@/lib/gemini/material-summary";
+import { getTeacherGeminiApiKey } from "@/lib/gemini/teacher-credentials";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { extractPdfText } from "@/lib/pdf/extract";
 import { extractDocText } from "@/lib/doc/extract";
@@ -63,6 +64,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
     const isDoc = ext === ".doc";
     const isDocx = ext === ".docx";
 
+    const teacherKey = await getTeacherGeminiApiKey(userData.user.id);
     let extractedText = "";
     let pageCount = 1;
     let usedPages = 1;
@@ -77,6 +79,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       summary = await generateMaterialSummary({
         topic: material.title,
         image: { mimeType, base64Data },
+        apiKey: teacherKey,
       });
       extractedText = summary?.extractedText || `${summary?.title ?? material.title}\n\n${summary?.summary ?? ""}`.trim();
       pageCount = 1;
@@ -93,6 +96,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
         summary = await generateMaterialSummary({
           topic: material.title,
           text: extractedText,
+          apiKey: teacherKey,
         });
       } else {
         errorMessage = "Insufficient extractable text in the DOCX file.";
@@ -110,6 +114,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
         summary = await generateMaterialSummary({
           topic: material.title,
           text: extractedText,
+          apiKey: teacherKey,
         });
       } else {
         errorMessage = "Insufficient extractable text in the DOC file.";
@@ -128,6 +133,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
         summary = await generateMaterialSummary({
           topic: material.title,
           text: extractedText,
+          apiKey: teacherKey,
         });
       } else {
         errorMessage = "Insufficient extractable text in the PDF.";

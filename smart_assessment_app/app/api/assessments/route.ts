@@ -5,6 +5,8 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { assessmentSchema } from "@/lib/validation";
 
+import { calculateEffectiveDeadline } from "@/lib/scheduling";
+
 export async function POST(request: Request) {
   try {
     const payload = assessmentSchema.parse(await request.json());
@@ -36,6 +38,8 @@ export async function POST(request: Request) {
         topic: payload.topic || payload.title,
         num_questions: payload.numQuestions,
         difficulty: payload.difficulty,
+        opens_at: payload.opensAt ? new Date(payload.opensAt).toISOString() : null,
+        closes_at: payload.closesAt ? new Date(payload.closesAt).toISOString() : null,
         created_by: user.id,
         status: "draft",
       })
@@ -143,10 +147,37 @@ export async function GET() {
       completed.push(completedItem);
       allStudentAssessments.push(completedItem);
     } else {
-      const isOpen = !a.opens_at || new Date(a.opens_at).getTime() <= now;
-      const isNotClosed = !a.closes_at || new Date(a.closes_at).getTime() > now;
+      const isBeforeStart = a.opens_at ? new Date(a.opens_at).getTime() > now : false;
+      const isPastClose = a.closes_at ? new Date(a.closes_at).getTime() <= now : false;
 
-      if (isOpen && isNotClosed) {
+      let canInclude = false;
+      let status: 'not-started' | 'in-progress' = 'not-started';
+
+      if (inProgressAttempt) {
+        // If student started on time, calculate effective deadline
+        const effectiveDeadline = calculateEffectiveDeadline(
+          inProgressAttempt.started_at,
+          duration,
+          a.closes_at
+        );
+        if (now <= effectiveDeadline) {
+          canInclude = true;
+          status = 'in-progress';
+        }
+      } else {
+        // No attempt started yet
+        if (isBeforeStart) {
+          // Scheduled in the future: show with scheduled time & countdown
+          canInclude = true;
+          status = 'not-started';
+        } else if (!isPastClose) {
+          // In the open window or unscheduled
+          canInclude = true;
+          status = 'not-started';
+        }
+      }
+
+      if (canInclude) {
         const toDoItem = {
           id: a.id,
           attemptId: inProgressAttempt?.id ?? null,
@@ -158,7 +189,7 @@ export async function GET() {
           teacher: teacherName,
           questions: questionCount,
           duration,
-          status: inProgressAttempt ? "in-progress" : "not-started",
+          status,
           dueDate: a.closes_at
             ? new Date(a.closes_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
             : "No deadline",

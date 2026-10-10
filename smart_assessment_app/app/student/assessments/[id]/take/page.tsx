@@ -9,8 +9,9 @@ import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
 import {
   Clock, ChevronLeft, ChevronRight, Flag, X, CheckCircle2,
-  AlertCircle, Send, BookOpen,
+  AlertCircle, Send, BookOpen, Calendar,
 } from "lucide-react";
+import { calculateEffectiveDeadline } from "@/lib/scheduling";
 
 /* ───────────────────────────────────────────────────────────── types ── */
 interface BackendQuestion {
@@ -25,6 +26,9 @@ interface BackendAttempt {
   id: string;
   assessment_id: string;
   started_at: string;
+  duration_minutes?: number;
+  effective_deadline?: string | null;
+  server_time?: string;
 }
 
 interface BackendAssessment {
@@ -32,7 +36,9 @@ interface BackendAssessment {
   title: string;
   topic: string | null;
   className: string;
-  closes_at: string | null;
+  opens_at?: string | null;
+  closes_at?: string | null;
+  duration_minutes?: number;
 }
 
 interface AttemptData {
@@ -40,24 +46,36 @@ interface AttemptData {
   assessment: BackendAssessment | null;
   questions: BackendQuestion[];
   answers: { question_id: string; selected_choice: string }[];
-  error?: { code: string; message: string };
+  error?: { code: string; message: string; opensAt?: string };
 }
 
-/* ─────────────────────────────────────────── countdown helper ── */
-function useCountdown(closesAt: string | null, startedAt: string | null) {
+/* ─────────────────────────────────────────── countdown helpers ── */
+function useCountdown(
+  effectiveDeadline: string | null | undefined,
+  onExpire?: () => void
+) {
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const expiredRef = useRef(false);
 
   useEffect(() => {
-    if (!closesAt) return;
-    const end = new Date(closesAt).getTime();
+    if (!effectiveDeadline) return;
+    const end = new Date(effectiveDeadline).getTime();
+    if (isNaN(end)) return;
+
     const tick = () => {
       const diff = Math.max(0, Math.floor((end - Date.now()) / 1000));
       setSecondsLeft(diff);
+      if (diff === 0 && !expiredRef.current) {
+        expiredRef.current = true;
+        if (onExpire) {
+          onExpire();
+        }
+      }
     };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [closesAt, startedAt]);
+  }, [effectiveDeadline, onExpire]);
 
   if (secondsLeft === null) return null;
   const h = Math.floor(secondsLeft / 3600);
@@ -67,6 +85,31 @@ function useCountdown(closesAt: string | null, startedAt: string | null) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+function useStartCountdown(opensAt: string | null | undefined) {
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!opensAt) return;
+    const target = new Date(opensAt).getTime();
+    if (isNaN(target)) return;
+
+    const tick = () => {
+      const diff = Math.max(0, Math.floor((target - Date.now()) / 1000));
+      setSecondsLeft(diff);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [opensAt]);
+
+  if (secondsLeft === null) return null;
+  const h = Math.floor(secondsLeft / 3600);
+  const m = Math.floor((secondsLeft % 3600) / 60);
+  const s = secondsLeft % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  return `${m}m ${s}s`;
+}
+
 /* ──────────────────────────────────────────── main component ── */
 export default function TakePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -74,6 +117,7 @@ export default function TakePage({ params }: { params: Promise<{ id: string }> }
 
   const [data, setData] = useState<AttemptData | null>(null);
   const [loadError, setLoadError] = useState("");
+  const [scheduledOpensAt, setScheduledOpensAt] = useState<string | null>(null);
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [showSubmit, setShowSubmit] = useState(false);
@@ -95,6 +139,9 @@ export default function TakePage({ params }: { params: Promise<{ id: string }> }
       .then((payload: AttemptData) => {
         if (cancelled) return;
         if (payload.error) {
+          if (payload.error.code === "NOT_STARTED" && payload.error.opensAt) {
+            setScheduledOpensAt(payload.error.opensAt);
+          }
           setLoadError(payload.error.message ?? "Unable to load assessment.");
           return;
         }
@@ -113,28 +160,6 @@ export default function TakePage({ params }: { params: Promise<{ id: string }> }
       });
     return () => { cancelled = true; };
   }, [id]);
-
-  const timer = useCountdown(
-    data?.assessment?.closes_at ?? null,
-    data?.attempt?.started_at ?? null,
-  );
-
-  /* ─── select answer ─── */
-  const selectAnswer = useCallback(async (qid: string, choice: string) => {
-    if (!data?.attempt?.id) return;
-    setAnswers((prev) => ({ ...prev, [qid]: choice }));
-    if (savingRef.current[qid]) return;
-    savingRef.current[qid] = true;
-    try {
-      await fetch(`/api/attempts/${data.attempt.id}/answer`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId: qid, selectedChoice: choice }),
-      });
-    } finally {
-      savingRef.current[qid] = false;
-    }
-  }, [data]);
 
   /* ─── submit ─── */
   const handleSubmit = useCallback(async () => {
@@ -159,6 +184,38 @@ export default function TakePage({ params }: { params: Promise<{ id: string }> }
     }
   }, [data, submitting, router]);
 
+  const effectiveDeadline = data?.attempt?.effective_deadline || (
+    data?.attempt?.started_at
+      ? new Date(
+          calculateEffectiveDeadline(
+            data.attempt.started_at,
+            data.attempt.duration_minutes || 45,
+            data.assessment?.closes_at
+          )
+        ).toISOString()
+      : null
+  );
+
+  const timer = useCountdown(effectiveDeadline, handleSubmit);
+  const startCountdown = useStartCountdown(scheduledOpensAt);
+
+  /* ─── select answer ─── */
+  const selectAnswer = useCallback(async (qid: string, choice: string) => {
+    if (!data?.attempt?.id || timer === "00:00") return;
+    setAnswers((prev) => ({ ...prev, [qid]: choice }));
+    if (savingRef.current[qid]) return;
+    savingRef.current[qid] = true;
+    try {
+      await fetch(`/api/attempts/${data.attempt.id}/answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionId: qid, selectedChoice: choice }),
+      });
+    } finally {
+      savingRef.current[qid] = false;
+    }
+  }, [data, timer]);
+
   /* ─── loading ─── */
   if (!data && !loadError) {
     return (
@@ -166,6 +223,34 @@ export default function TakePage({ params }: { params: Promise<{ id: string }> }
         <div className="text-center">
           <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600 mb-4" />
           <p className="text-sm text-slate-500">Loading assessment…</p>
+        </div>
+      </div>
+    );
+  }
+
+  /* ─── scheduled early access ─── */
+  if (scheduledOpensAt) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center max-w-md p-8 bg-white border border-slate-200 rounded-2xl shadow-soft">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-50 text-brand-600 mx-auto mb-4">
+            <Calendar className="h-8 w-8" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Assessment Scheduled</h2>
+          <p className="text-sm text-slate-500 mb-6">{loadError}</p>
+          {startCountdown && (
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 mb-6">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 block mb-1">
+                Starts In
+              </span>
+              <span className="text-2xl font-bold text-brand-700 tabular-nums">
+                {startCountdown}
+              </span>
+            </div>
+          )}
+          <Button variant="outline" onClick={() => router.push("/student/assessments")}>
+            Back to Assessments
+          </Button>
         </div>
       </div>
     );
@@ -294,11 +379,13 @@ export default function TakePage({ params }: { params: Promise<{ id: string }> }
                   <button
                     key={j}
                     onClick={() => selectAnswer(question.id, opt)}
+                    disabled={timer === "00:00" || submitting}
                     className={cn(
                       "flex w-full items-center gap-3 p-4 rounded-xl border-2 text-left transition-all",
                       isSelected
                         ? "border-brand-500 bg-brand-50 shadow-glow-brand"
-                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50",
+                      (timer === "00:00" || submitting) && "opacity-60 cursor-not-allowed hover:border-slate-200 hover:bg-white"
                     )}
                   >
                     <span

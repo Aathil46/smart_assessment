@@ -85,4 +85,91 @@ describe("Teacher AI Insights Generation Logic", () => {
     expect(insight.priority).toBe("high");
     expect(insight.affectedStudents).toEqual(["Alice", "Charlie"]);
   });
+
+  describe("Teaching Insights Dashboard & Summary Aggregation", () => {
+    const mockAssessments = [
+      {
+        id: "a1",
+        title: "Cell Biology Quiz",
+        topic: "Cells",
+        className: "Grade 10 Biology",
+        subject: "Science",
+        studentsTotal: 25,
+        studentsCompleted: 24,
+        hasInsights: true,
+        insightsCount: 3,
+        createdAt: "2024-03-01T10:00:00Z",
+      },
+      {
+        id: "a2",
+        title: "Photosynthesis Unit Test",
+        topic: "Plant Biology",
+        className: "Grade 10 Biology",
+        subject: "Science",
+        studentsTotal: 25,
+        studentsCompleted: 22,
+        hasInsights: false,
+        insightsCount: 0,
+        createdAt: "2024-03-05T10:00:00Z",
+      },
+      {
+        id: "a3",
+        title: "Genetics Intro",
+        topic: "Genetics",
+        className: "Grade 11 AP Bio",
+        subject: "Biology",
+        studentsTotal: 20,
+        studentsCompleted: 18,
+        hasInsights: true,
+        insightsCount: 2,
+        createdAt: "2024-03-10T10:00:00Z",
+      },
+    ];
+
+    it("calculates accurate summary metrics for completed assessments and generated insights", () => {
+      const completedAssessments = mockAssessments.length;
+      const generatedInsights = mockAssessments.filter((a) => a.hasInsights).length;
+      const awaitingAnalysis = mockAssessments.filter((a) => !a.hasInsights).length;
+
+      expect(completedAssessments).toBe(3);
+      expect(generatedInsights).toBe(2);
+      expect(awaitingAnalysis).toBe(1);
+    });
+
+    it("distinguishes analyzed assessments from assessments awaiting analysis", () => {
+      const readyAssessments = mockAssessments.filter((a) => a.hasInsights);
+      const pendingAssessments = mockAssessments.filter((a) => !a.hasInsights);
+
+      expect(readyAssessments.map((a) => a.id)).toEqual(["a1", "a3"]);
+      expect(pendingAssessments.map((a) => a.id)).toEqual(["a2"]);
+    });
+
+    it("filters assessments by search query across title, class, and subject", () => {
+      const query = "Genetics";
+      const matches = mockAssessments.filter(
+        (a) =>
+          a.title.toLowerCase().includes(query.toLowerCase()) ||
+          a.className.toLowerCase().includes(query.toLowerCase()) ||
+          (a.subject ? a.subject.toLowerCase().includes(query.toLowerCase()) : false)
+      );
+
+      expect(matches).toHaveLength(1);
+      expect(matches[0].id).toBe("a3");
+    });
+
+    it("handles honest unavailable state for empty assessments list", () => {
+      const emptyList: typeof mockAssessments = [];
+      const summary = {
+        completedAssessments: emptyList.length,
+        generatedInsights: emptyList.filter((a) => a.hasInsights).length,
+        conceptsNeedingAttention: null,
+        studentsNeedingSupport: null,
+      };
+
+      expect(summary.completedAssessments).toBe(0);
+      expect(summary.generatedInsights).toBe(0);
+      expect(summary.conceptsNeedingAttention).toBeNull();
+      expect(summary.studentsNeedingSupport).toBeNull();
+    });
+  });
 });

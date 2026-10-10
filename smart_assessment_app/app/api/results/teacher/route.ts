@@ -14,6 +14,7 @@ export interface ResultAssessment {
   passRate: number;
   status: "published" | "draft";
   createdAt: string;
+  createdAtRaw?: string;
   color: "teal" | "blue" | "amber" | "purple" | "rose" | "emerald" | "orange" | "sky";
 }
 
@@ -206,6 +207,7 @@ export async function GET() {
         passRate,
         status: a.status === "published" ? "published" : "draft",
         createdAt: formatDate(a.created_at),
+        createdAtRaw: a.created_at,
         color: getColorForId(a.id),
       };
     });

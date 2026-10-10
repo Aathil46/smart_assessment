@@ -64,6 +64,63 @@
   @keyframes shimmer { from { background-position: -200% 0; } to { background-position: 200% 0; } }
 }
 
+@keyframes bell-ring {
+  0% { transform: rotate(0); }
+  10% { transform: rotate(14deg); }
+  20% { transform: rotate(-12deg); }
+  30% { transform: rotate(10deg); }
+  40% { transform: rotate(-8deg); }
+  50% { transform: rotate(6deg); }
+  60% { transform: rotate(-4deg); }
+  70% { transform: rotate(2deg); }
+  80% { transform: rotate(-1deg); }
+  100% { transform: rotate(0); }
+}
+
+.animate-bell-ring {
+  transform-origin: top center;
+  animation: bell-ring 1.2s ease-in-out;
+}
+
+@keyframes bell-ring-continuous {
+  0%, 100% { transform: rotate(0); }
+  4% { transform: rotate(12deg); }
+  8% { transform: rotate(-10deg); }
+  12% { transform: rotate(8deg); }
+  16% { transform: rotate(-6deg); }
+  20% { transform: rotate(4deg); }
+  24% { transform: rotate(-2deg); }
+  28%, 100% { transform: rotate(0); }
+}
+
+.animate-bell-ring-continuous {
+  transform-origin: top center;
+  animation: bell-ring-continuous 2.8s ease-in-out infinite;
+}
+
+@keyframes indeterminate-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(30%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+.animate-indeterminate-progress {
+  animation: indeterminate-progress 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-bell-ring,
+  .animate-bell-ring-continuous {
+    animation: none !important;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
